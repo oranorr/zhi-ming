@@ -17,6 +17,9 @@ dependencies:
   equatable: ^2.0.5
   json_annotation: ^4.8.1
   path_provider: ^2.1.2
+  deepseek_api: ^0.1.2
+  dio: ^5.4.1
+  http: ^1.2.1
 
 dev_dependencies:
   flutter_test:
@@ -36,3 +39,8 @@ flutter:
 
   assets:
     - assets/
+    - assets/data/
+    - assets/heads.png
+    - assets/tails.png
+    - assets/shake.png
+    - assets/data/hexagrams.json

@@ -9,6 +9,7 @@ import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_screen.dart';
 import 'package:zhi_ming/features/home/data/local_repo.dart';
+import 'package:zhi_ming/features/iching/screens/iching_home_screen.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -31,6 +32,8 @@ class HomePage extends StatelessWidget {
           SliverToBoxAdapter(child: SizedBox(height: 10.h)),
           const SliverToBoxAdapter(child: _ScrollButton()),
           SliverToBoxAdapter(child: SizedBox(height: 10.h)),
+          // const SliverToBoxAdapter(child: _IChingButton()),
+          // SliverToBoxAdapter(child: SizedBox(height: 10.h)),
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) => questions[index].buildTile(context),
@@ -185,6 +188,77 @@ class _ScrollButton extends StatelessWidget {
                   ],
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IChingButton extends StatelessWidget {
+  const _IChingButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 20.w),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: double.infinity,
+          height: 110.h,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.amber.shade200, Colors.amber.shade100],
+            ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const IChingHomeScreen(),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(18.w, 14.h, 0, 14.h),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 73.w,
+                      height: 82.h,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '易',
+                          style: TextStyle(
+                            fontSize: 40,
+                            color: Colors.amber.shade800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 21.w),
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Книга Перемен', style: context.styles.regular),
+                        Text(
+                          'Узнайте свою судьбу',
+                          style: context.styles.medium,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

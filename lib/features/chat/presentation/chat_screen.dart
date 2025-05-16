@@ -12,7 +12,8 @@ import 'package:zhi_ming/core/widgets/z_scaffold.dart';
 import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/input_send.dart';
-import 'package:zhi_ming/features/chat/presentation/popup.dart';
+import 'package:zhi_ming/features/iching/widgets/iching_shake_popup.dart';
+import 'package:zhi_ming/features/iching/widgets/hexagram_widget.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({required this.entrypoint, super.key});
@@ -43,6 +44,16 @@ class _ChatScreenState extends State<ChatScreen> {
     // Показываем начальное сообщение от бота при открытии чата
     WidgetsBinding.instance.addPostFrameCallback((_) {
       cubit.showInitialMessage();
+
+      // Проверяем наличие предварительно заданного вопроса
+      final predefinedQuestion = widget.entrypoint.predefinedQuestion;
+      if (predefinedQuestion != null && predefinedQuestion.isNotEmpty) {
+        // Устанавливаем предварительно заданный вопрос в поле ввода
+        cubit.updateInput(predefinedQuestion);
+
+        // Отправляем сообщение
+        cubit.sendMessage();
+      }
     });
   }
 
@@ -143,6 +154,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   index == 0 &&
                                   !message.isMe,
                               text: message.text,
+                              hexagrams: message.hexagrams,
                             ),
                           );
                         },
@@ -157,17 +169,25 @@ class _ChatScreenState extends State<ChatScreen> {
                         action: () {
                           showDialog(
                             context: context,
-                            barrierDismissible:
-                                false, // Запрещаем закрытие по нажатию вне диалога
                             barrierColor: Colors.black54,
-                            builder:
-                                (context) => ShakePhoneWidget(
-                                  shakeService: ShakerServiceImpl(),
-                                ),
-                          ).then((_) {
-                            // После закрытия попапа обрабатываем результат встряхивания
-                            cubit.processAfterShaking();
-                          });
+                            builder: (context) {
+                              // Создаем один экземпляр сервиса для использования в обоих местах
+                              final shakerService = ShakerServiceImpl();
+                              return IChingShakePopup(
+                                shakeService: shakerService,
+                                onLineGenerated: (lineValue) {
+                                  // Если все 6 линий уже получены (всего нужно 6 бросков монет)
+                                  // каждый бросок состоит из 3 монет, но нам нужны только итоговые линии
+                                  if (shakerService.currentShakeCount >= 6) {
+                                    // Обрабатываем сгенерированную линию и передаем сервис
+                                    cubit.processAfterShaking(shakerService);
+                                  }
+                                },
+                                currentLine: 1,
+                                totalLines: 6,
+                              );
+                            },
+                          );
                         },
                         isLoading: false,
                         isActive: true,
@@ -199,11 +219,13 @@ class MessageWidget extends StatelessWidget {
     required this.isMe,
     required this.text,
     required this.isLoading,
+    this.hexagrams,
     super.key,
   });
   final bool isMe;
   final String text;
   final bool isLoading;
+  final List<dynamic>? hexagrams;
 
   @override
   Widget build(BuildContext context) {
@@ -250,10 +272,101 @@ class MessageWidget extends StatelessWidget {
                 ),
               )
             else
-              Expanded(child: Text(text, style: context.styles.medium)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Текст сообщения
+                    Text(text, style: context.styles.medium),
+
+                    // Отображаем гексаграммы, если они есть
+                    if (hexagrams != null && hexagrams!.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(top: 16.h),
+                        child: _buildHexagramsSection(context),
+                      ),
+                  ],
+                ),
+              ),
           ],
         ),
       );
     }
+  }
+
+  Widget buildText(String text, BuildContext context, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        text,
+        style: isBold ? context.styles.medium : context.styles.small,
+        // textAlign: TextAlign.center,
+      ),
+    );
+  }
+
+  Widget _buildHexagramsSection(BuildContext context) {
+    // final String theTitle = [hexagram.name, hexagram.number].join(' ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Заголовок раздела с гексаграммами
+        // const Text(
+        //   'Результат предсказания:',
+        //   style: TextStyle(
+        //     fontSize: 16,
+        //     fontWeight: FontWeight.bold,
+        //     color: ZColors.blueDark,
+        //   ),
+        // ),
+        // SizedBox(height: 12.h),
+
+        // Отображение гексаграмм в ряд или в столбец в зависимости от количества
+        if (hexagrams!.length == 1)
+          // Одна гексаграмма - просто размещаем по центру
+          Center(
+            child: HexagramWidget(
+              hexagram: hexagrams![0],
+              width: 120.w,
+              lineHeight: 16.h,
+              title: 'Ваша гексаграмма',
+            ),
+          )
+        else
+          // Две гексаграммы - размещаем рядом
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Expanded(
+                child: HexagramWidget(
+                  hexagram: hexagrams![0],
+                  width: 100.w,
+                  lineHeight: 12.h,
+                  title: 'Исходная',
+                ),
+              ),
+              SizedBox(width: 16.w),
+              Expanded(
+                child: HexagramWidget(
+                  hexagram: hexagrams![1],
+                  width: 100.w,
+                  lineHeight: 12.h,
+                  title: 'Изменяющаяся',
+                ),
+              ),
+            ],
+          ),
+        for (final hexagram in hexagrams!) ...[
+          buildText('所得卦象:', context, isBold: true),
+          buildText([hexagram.name, hexagram.number].join(' '), context),
+          SizedBox(height: 10.h),
+          buildText('核心含义:', context, isBold: true),
+          buildText(
+            'здесь очень длинный текст описания, который может быть очень длинным и сложным для понимания',
+            context,
+          ),
+        ],
+      ],
+    );
   }
 }

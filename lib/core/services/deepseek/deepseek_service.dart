@@ -20,13 +20,10 @@ class DeepSeekService {
   DeepSeekService() {
     // Настраиваем Dio для прямой работы с API
     _dio.options.headers['Authorization'] = 'Bearer $_apiKey';
-    _dio.options.headers['HTTP-Referer'] = 'https://zhi-ming-app.com';
-    _dio.options.headers['X-Title'] = 'Zhi Ming App';
     _dio.options.headers['Content-Type'] = 'application/json';
   }
-  static const String _apiKey =
-      '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';
-  static const String _baseUrl = 'https://openrouter.ai/api/v1';
+  static const String _apiKey = 'sk-a56eb0bafdb840868eeeb56884dfb61a';
+  static const String _baseUrl = 'https://api.deepseek.com/v1';
 
   final _dio = Dio();
 
@@ -67,7 +64,7 @@ class DeepSeekService {
       debugPrint('Сообщение пользователя: $messagePreview');
       messages.add({'role': 'user', 'content': message});
 
-      // Формируем тело запроса в соответствии с OpenRouter API
+      // Формируем тело запроса в соответствии с DeepSeek API
       final requestBody = {
         'model': model,
         'messages': messages,
@@ -79,7 +76,7 @@ class DeepSeekService {
       debugPrint('Тело запроса: частичное содержимое...');
       debugPrint('URL: $_baseUrl/chat/completions');
       debugPrint(
-        'Headers: Content-Type: application/json, Authorization: Bearer sk-*****, HTTP-Referer: https://zhi-ming-app.com',
+        'Headers: Content-Type: application/json, Authorization: Bearer sk-*****',
       );
 
       // Отправляем запрос напрямую через Dio
@@ -195,8 +192,6 @@ class DeepSeekService {
       final headers = {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $_apiKey',
-        'HTTP-Referer': 'https://zhi-ming-app.com',
-        'X-Title': 'Zhi Ming App',
       };
 
       final requestBody = jsonEncode({
@@ -645,13 +640,13 @@ class DeepSeekService {
   String _getModelByAgentType(AgentType agentType) {
     switch (agentType) {
       case AgentType.requestValidator:
-        return 'deepseek/deepseek-prover-v2:free';
+        return 'deepseek-chat';
       case AgentType.ichingInterpreter:
-        return 'deepseek/deepseek-prover-v2:free';
+        return 'deepseek-chat';
       case AgentType.onboarding:
-        return 'deepseek/deepseek-prover-v2:free';
+        return 'deepseek-chat';
       case AgentType.followUpQuestions:
-        return 'deepseek/deepseek-prover-v2:free';
+        return 'deepseek-chat';
     }
   }
 
@@ -676,7 +671,7 @@ class DeepSeekService {
       final response = await _dio.post(
         '$_baseUrl/chat/completions',
         data: {
-          'model': 'deepseek/deepseek-prover-v2:free',
+          'model': 'deepseek-chat',
           'messages': [
             {'role': 'user', 'content': 'Привет, это тестовое сообщение.'},
           ],

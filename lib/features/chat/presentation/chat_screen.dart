@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
@@ -12,9 +13,10 @@ import 'package:zhi_ming/core/widgets/z_scaffold.dart';
 import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/input_send.dart';
-import 'package:zhi_ming/features/iching/widgets/iching_shake_popup.dart';
+import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 import 'package:zhi_ming/features/iching/widgets/hexagram_widget.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:zhi_ming/features/iching/widgets/iching_shake_popup.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({required this.entrypoint, super.key});
@@ -122,6 +124,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
                       // Полностью очищаем состояние кубита вместо просто очистки сообщений
                       await cubit.clear();
+
+                      if (widget.entrypoint is OnboardingEntrypointEntity) {
+                        await Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (context) => const HomePage(),
+                          ),
+                        );
+                      }
 
                       // Возвращаемся на предыдущий экран
                       if (mounted) {
@@ -234,22 +244,24 @@ class MessageWidget extends StatelessWidget {
       return Align(
         alignment: Alignment.centerRight,
         child: Container(
-          constraints: BoxConstraints(
-            maxWidth: 260.w,
-            minWidth: double.minPositive,
-          ),
-          margin: EdgeInsets.only(bottom: 10.h),
+          constraints: BoxConstraints(maxWidth: 260.w),
           decoration: BoxDecoration(
             color: ZColors.yellowLight,
             borderRadius: BorderRadius.circular(20),
           ),
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-          child: Text(text, style: context.styles.medium, softWrap: true),
+          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
+          child: Text(
+            text,
+            style: context.styles.medium,
+            softWrap: true,
+            textAlign: TextAlign.right,
+          ),
         ),
       );
     } else {
       return AnimatedContainer(
         duration: const Duration(milliseconds: 300),
+
         child: Row(
           crossAxisAlignment:
               isLoading ? CrossAxisAlignment.center : CrossAxisAlignment.start,

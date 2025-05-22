@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
-import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/widgets/z_button.dart';
 import 'package:zhi_ming/core/widgets/z_scaffold.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_screen.dart';
 import 'package:zhi_ming/features/chat/presentation/input_send.dart';
-import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/onboard/data/onboard_repo.dart';
 import 'package:zhi_ming/features/onboard/domain/onboard_state.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';
+import 'package:zhi_ming/features/onboard/presentation/onboard_mixin.dart';
 import 'package:zhi_ming/features/onboard/presentation/z_date_picker.dart';
 
 class OnboardScreen extends StatefulWidget {
@@ -22,105 +19,12 @@ class OnboardScreen extends StatefulWidget {
   State<OnboardScreen> createState() => _OnboardScreenState();
 }
 
-class _OnboardScreenState extends State<OnboardScreen> {
-  late OnboardCubit cubit;
-  final FocusNode _focusNode = FocusNode();
-  final ScrollController _scrollController = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    cubit = context.read<OnboardCubit>();
-
-    // Добавляем слушатель прокрутки для закрытия клавиатуры
-    _scrollController.addListener(_onScroll);
-
-    // Показываем начальное сообщение
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      cubit.showInitialMessage();
-    });
-  }
-
-  // Метод для отслеживания прокрутки и закрытия клавиатуры
-  void _onScroll() {
-    if (_scrollController.position.userScrollDirection ==
-        ScrollDirection.forward) {
-      _hideKeyboard();
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  // Метод для скрытия клавиатуры
-  void _hideKeyboard() {
-    _focusNode.unfocus();
-    FocusScope.of(context).unfocus();
-    FocusManager.instance.primaryFocus?.unfocus();
-    SystemChannels.textInput.invokeMethod('TextInput.hide');
-  }
-
-  Future<void> _showDatePicker(BuildContext context) async {
-    _hideKeyboard();
-
-    final DateTime? pickedDate = await showDialog<DateTime>(
-      context: context,
-      builder:
-          (BuildContext context) => Dialog(
-            insetPadding: EdgeInsets.symmetric(
-              horizontal: 20.w,
-              vertical: 24.h,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const ZDatePicker(),
-          ),
-    );
-    // showDatePicker(
-    //   context: context,
-    //   initialDate: DateTime(2000),
-    //   firstDate: DateTime(1900),
-    //   lastDate: DateTime.now(),
-    //   builder: (BuildContext context, Widget? child) {
-    //     return Theme(
-    //       data: ThemeData.light().copyWith(
-    //         colorScheme: const ColorScheme.light(
-    //           primary: ZColors.purpleLight,
-    //           onPrimary: ZColors.white,
-    //           surface: ZColors.white,
-    //           onSurface: ZColors.purpleLight,
-    //         ),
-    //         dialogTheme: const DialogThemeData(backgroundColor: ZColors.white),
-    //       ),
-    //       child: child!,
-    //     );
-    //   },
-    // );
-
-    if (pickedDate != null && mounted) {
-      cubit.selectBirthDate(pickedDate);
-    }
-  }
-
+class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<OnboardCubit, OnboardState>(
       listener: (context, state) {
-        if (state.isCompleted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            // Перейти на главный экран после завершения
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const HomePage()),
-            );
-          });
-        }
+        // Слушатель событий от cubit
       },
       builder: (context, state) {
         return ZScaffold(
@@ -130,51 +34,287 @@ class _OnboardScreenState extends State<OnboardScreen> {
             child: Column(
               children: [
                 SizedBox(height: 35.h),
+
+                // Заголовок с дедом
+                _buildHeader(),
+
+                // Основной контент
                 Expanded(
                   child: GestureDetector(
-                    onTap: _hideKeyboard,
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      reverse: true,
-                      itemCount: state.messages.length,
-                      itemBuilder: (context, index) {
-                        final message = state.messages[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: MessageWidget(
-                            isMe: message.isMe,
-                            isLoading: false,
-                            text: message.text,
-                          ),
-                        );
-                      },
-                    ),
+                    onTap: hideKeyboard,
+                    child: _buildMainContent(state),
                   ),
                 ),
+
                 SizedBox(height: 20.h),
-                if (state.isDatePickerVisible)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: Zbutton(
-                      action: () async => _showDatePicker(context),
-                      isLoading: false,
-                      isActive: true,
-                      text: '输入出生日期',
-                      textColor: ZColors.white,
-                    ),
-                  ),
-                InputSendWidget(
-                  onSend: () => cubit.sendMessage(),
-                  onTextChanged: (text) => cubit.updateInput(text),
-                  isSendAvailable: state.currentInput.trim().isNotEmpty,
-                  currentInput: state.currentInput,
-                  focusNode: _focusNode,
-                ),
+
+                // Виджет ввода сообщения (если нужен)
+                _buildInputWidget(state),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  // Метод для построения заголовка с дедом
+  Widget _buildHeader() {
+    if (analysisResult != null) {
+      return SizedBox(height: 35.h);
+    }
+
+    if (isLoading) {
+      // При загрузке показываем большого деда с сообщением "думаю"
+      return Column(
+        children: [
+          Image.asset(
+            'assets/ded.png',
+            width: 200.w,
+            height: 200.h,
+            fit: BoxFit.cover,
+          ),
+          SizedBox(height: 8.h),
+          const _DedMessage(message: '思考中...'), // "Думаю..."
+        ],
+      );
+    }
+
+    if (birthdateSelected) {
+      // Горизонтальное расположение (маленький дед + сообщение)
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: 16.h),
+        child: Row(
+          children: [
+            Image.asset(
+              'assets/ded.png',
+              width: 40.w,
+              height: 40.h,
+              fit: BoxFit.cover,
+            ),
+            SizedBox(width: 16.w),
+            _DedMessage(message: dedMessage),
+          ],
+        ),
+      );
+    } else {
+      // Вертикальное расположение (большой дед, затем сообщение)
+      return Column(
+        children: [
+          Image.asset(
+            'assets/ded.png',
+            width: 200.w,
+            height: 200.h,
+            fit: BoxFit.cover,
+          ),
+          SizedBox(height: 8.h),
+          _DedMessage(message: dedMessage),
+        ],
+      );
+    }
+  }
+
+  // Метод для построения основного контента
+  Widget _buildMainContent(OnboardState state) {
+    if (isLoading) {
+      return Center(
+        child: SizedBox.square(
+          dimension: 100.r,
+          child: const CircularProgressIndicator(
+            color: Color(0xFF7C7CFF),
+            strokeWidth: 5,
+          ),
+        ),
+      );
+    }
+
+    if (birthdateSelected) {
+      // Если анализ уже готов, показываем результат
+      if (analysisResult != null) {
+        return MessageWidget(
+          isMe: false,
+          text: analysisResult!.text,
+          isLoading: false,
+        );
+      }
+
+      // Иначе показываем селектор интересов
+      return _InterestsSelector(
+        interests: OnboardRepo.interests,
+        selectedInterests: selectedInterests,
+        onInterestSelected: onInterestSelected,
+        onSave: saveInterests,
+      );
+    }
+
+    if (boolShowDatePicker) {
+      return _DatePickerWidget(
+        selectedDate: selectedDate,
+        onDateChanged: onDateChanged,
+        onSave: saveBirthDate,
+      );
+    }
+
+    if (userMessage != null) {
+      return Column(
+        children: [
+          // Пустое пространство для смещения сообщения вниз
+          const Spacer(),
+          // Сообщение пользователя
+          MessageWidget(isMe: true, text: userMessage!.text, isLoading: false),
+          // Небольшой отступ внизу
+          SizedBox(height: 20.h),
+        ],
+      );
+    }
+
+    return Container();
+  }
+
+  // Метод для построения виджета ввода
+  Widget _buildInputWidget(OnboardState state) {
+    // Если у нас есть результат анализа, показываем две кнопки
+    if (analysisResult != null) {
+      return Row(
+        children: [
+          // Кнопка перехода на домашний экран
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(right: 8.w),
+              child: Zbutton(
+                action: navigateToHome,
+                isLoading: false,
+                isActive: true,
+                text: '首页', // "Домой"
+                color: const Color(0xFF7C7CFF),
+                textColor: Colors.white,
+              ),
+            ),
+          ),
+
+          // Кнопка перехода в чат
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(left: 8.w),
+              child: Zbutton(
+                action: navigateToChat,
+                isLoading: false,
+                isActive: true,
+                text: '聊天', // "Чат"
+                color: const Color(0xFF7C7CFF),
+                textColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Стандартная логика отображения поля ввода
+    if (!boolShowDatePicker && !birthdateSelected && !isLoading) {
+      return InputSendWidget(
+        onSend: sendMessage,
+        onTextChanged: (text) => cubit.updateInput(text),
+        isSendAvailable: state.currentInput.trim().isNotEmpty,
+        currentInput: state.currentInput,
+        focusNode: focusNode,
+      );
+    }
+
+    return const SizedBox.shrink(); // Пустой виджет, если ввод не нужен
+  }
+}
+
+// Виджет сообщения от деда
+class _DedMessage extends StatelessWidget {
+  const _DedMessage({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      message,
+      style: context.styles.medium,
+      textAlign: TextAlign.center,
+    );
+  }
+}
+
+// Виджет выбора даты
+class _DatePickerWidget extends StatelessWidget {
+  const _DatePickerWidget({
+    required this.selectedDate,
+    required this.onDateChanged,
+    required this.onSave,
+  });
+
+  final DateTime selectedDate;
+  final Function(DateTime) onDateChanged;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Spacer(),
+        ZDatePicker(onDateChanged: onDateChanged, initialDate: selectedDate),
+        const Spacer(),
+        Zbutton(
+          action: onSave,
+          isLoading: false,
+          isActive: true,
+          text: '保存',
+          color: const Color(0xFF7C7CFF),
+          textColor: Colors.white,
+        ),
+      ],
+    );
+  }
+}
+
+// Виджет выбора интересов
+class _InterestsSelector extends StatelessWidget {
+  const _InterestsSelector({
+    required this.interests,
+    required this.selectedInterests,
+    required this.onInterestSelected,
+    required this.onSave,
+  });
+
+  final List<Interest> interests;
+  final List<Interest> selectedInterests;
+  final Function(Interest, bool) onInterestSelected;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Wrap(
+            spacing: 12.w,
+            runSpacing: 10.h,
+            children: [
+              for (final interest in interests)
+                InterestChip(
+                  interest: interest,
+                  isSelected: selectedInterests.contains(interest),
+                  onSelectionChanged: onInterestSelected,
+                  key: ValueKey(interest.name),
+                ),
+            ],
+          ),
+        ),
+        SizedBox(height: 20.h),
+        Zbutton(
+          action: onSave,
+          isLoading: false,
+          isActive: true,
+          text: '选择',
+          color: const Color(0xFF7C7CFF),
+          textColor: Colors.white,
+        ),
+      ],
     );
   }
 }

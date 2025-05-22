@@ -1,8 +1,10 @@
 // final _routerConfig = appNavigationService.config;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zhi_ming/core/theme/themes.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/home/presentation/home_page.dart';
@@ -17,10 +19,39 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> {
+  // Константа для ключа в SharedPreferences
+  static const String _onboardingCompletedKey = 'onboarding_completed';
+
+  // Флаг, указывающий на прохождение онбординга
+  bool _onboardingCompleted = false;
+
+  // Флаг для отслеживания завершения проверки статуса
+  bool _isInitializing = true;
+
   @override
   void initState() {
     super.initState();
-    // _setupRouterListener();
+    _checkOnboardingStatus();
+  }
+
+  /// Проверяет, был ли пройден онбординг
+  Future<void> _checkOnboardingStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final onboardingCompleted =
+          prefs.getBool(_onboardingCompletedKey) ?? false;
+
+      setState(() {
+        _onboardingCompleted = onboardingCompleted;
+        _isInitializing = false;
+      });
+    } catch (e) {
+      print('Ошибка при проверке статуса онбординга: $e');
+      setState(() {
+        _onboardingCompleted = false;
+        _isInitializing = false;
+      });
+    }
   }
 
   // void _setupRouterListener() {
@@ -65,12 +96,28 @@ class _AppState extends State<App> {
             title: 'Pivot App',
             theme: AppTheme.light(),
             themeMode: ThemeMode.light,
-            home: const OnboardScreen(),
+            home:
+                _isInitializing
+                    ? const _LoadingScreen() // Экран загрузки пока проверяем статус
+                    // : !kDebugMode
+                    : _onboardingCompleted
+                    ? const HomePage() // Если онбординг пройден, показываем главную страницу
+                    : const OnboardScreen(), // Иначе показываем экран онбординга
             // routerConfig: _routerConfig,
             // scaffoldMessengerKey: scaffoldKey,
           ),
         );
       },
     );
+  }
+}
+
+/// Виджет экрана загрузки
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }

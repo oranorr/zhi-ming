@@ -24,8 +24,8 @@ class HomePage extends StatelessWidget {
           SliverPersistentHeader(
             pinned: true,
             delegate: _SliverHeaderDelegate(
-              minHeight: 225.h,
-              maxHeight: 260.h,
+              minHeight: 255.h,
+              maxHeight: 280.h,
               child: const _Header(),
             ),
           ),
@@ -72,6 +72,10 @@ class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
     // Рассчитаем elevation на основе процента скролла
     final elevation = shrinkPercentage * 10; // Максимальная тень - 10
 
+    // Добавляем отступ сверху для безопасной зоны, когда хедер не развернут
+    final safeAreaPadding = MediaQuery.of(context).padding.top;
+    final topPadding = !isExpanded ? safeAreaPadding : 0.0;
+
     return DecoratedBox(
       // Белый фон с динамической прозрачностью и тенью
       decoration: BoxDecoration(
@@ -79,7 +83,7 @@ class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
         boxShadow: [
           if (shrinkPercentage > 0.05)
             BoxShadow(
-              color: Colors.black.withOpacity(0.1 * shrinkPercentage),
+              color: Colors.black.withOpacity(0.5 * shrinkPercentage),
               blurRadius: elevation,
               spreadRadius: elevation / 3,
             ),
@@ -91,10 +95,13 @@ class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
           gradient:
               ZColors.homeGradient, // Используем созданный усиленный градиент
         ),
-        child: Transform.scale(
-          scale: scale,
-          alignment: Alignment.topCenter,
-          child: _Header(isExpanded: isExpanded),
+        child: Padding(
+          padding: EdgeInsets.only(top: topPadding),
+          child: Transform.scale(
+            scale: scale,
+            alignment: Alignment.topCenter,
+            child: _Header(isExpanded: isExpanded),
+          ),
         ),
       ),
     );
@@ -150,7 +157,7 @@ class _Header extends StatelessWidget {
               text: '请说出你内心的问题',
               textColor: ZColors.white,
             ),
-            SizedBox(height: 16.h),
+            SizedBox(height: 4.h),
           ],
         ),
       ),

@@ -1,16 +1,14 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:json_annotation/json_annotation.dart';
+import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
+import 'package:zhi_ming/core/services/deepseek/models/message.dart';
+import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/iching/models/hexagram.dart';
-import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
-import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
-import 'package:zhi_ming/core/services/deepseek/models/response_parsers.dart';
-import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 
 part 'chat_cubit.g.dart';
 
@@ -127,7 +125,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
     if (state.currentInput.trim().isEmpty) return;
 
     final newMessage = MessageEntity(
-      text: state.currentInput,
+      text: state.currentInput.trim(),
       isMe: true,
       timestamp: DateTime.now(),
     );

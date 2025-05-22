@@ -8,19 +8,35 @@ class RequestValidationResponse {
     required this.reasonMessage,
   });
 
-  /// Создание из JSON карты
-  factory RequestValidationResponse.fromMap(Map<String, dynamic> map) {
-    return RequestValidationResponse(
-      status: map['status'] as String,
-      reasonMessage: map['reasonMessage'] as String,
-    );
+  /// Создание из JSON строки
+  factory RequestValidationResponse.fromJson(String source) {
+    try {
+      final Map<String, dynamic> jsonMap =
+          json.decode(source) as Map<String, dynamic>;
+      return RequestValidationResponse.fromMap(jsonMap);
+    } catch (e) {
+      return RequestValidationResponse.unknown(
+        'Ошибка парсинга JSON: $e, исходный ответ: $source',
+      );
+    }
   }
 
-  /// Создание из JSON строки
-  factory RequestValidationResponse.fromJson(String source) =>
-      RequestValidationResponse.fromMap(
-        json.decode(source) as Map<String, dynamic>,
-      );
+  /// Создание из JSON карты
+  factory RequestValidationResponse.fromMap(Map<String, dynamic> map) {
+    // Обрабатываем разные варианты структуры JSON
+    final status = map['status'] as String? ?? 'unknown';
+
+    // Обработка reasonMessage, который может отсутствовать для valid статуса
+    String reasonMessage = '';
+    if (map.containsKey('reasonMessage')) {
+      reasonMessage = map['reasonMessage'] as String? ?? '';
+    }
+
+    return RequestValidationResponse(
+      status: status,
+      reasonMessage: reasonMessage,
+    );
+  }
 
   /// Фабричный метод для создания ответа о неизвестной ошибке
   factory RequestValidationResponse.unknown(String message) {
@@ -60,14 +76,26 @@ class StreamingResponseHandler {
       final jsonLine = chunk.substring(6); // Удаляем 'data: '
       try {
         final data = jsonDecode(jsonLine);
+
+        // Проверяем структуру ответа от OpenRouter API
         if (data.containsKey('choices') &&
             data['choices'] is List &&
-            data['choices'].isNotEmpty &&
-            data['choices'][0].containsKey('delta') &&
-            data['choices'][0]['delta'].containsKey('content')) {
-          final content = data['choices'][0]['delta']['content'];
-          if (content != null && content.isNotEmpty) {
-            return content;
+            data['choices'].isNotEmpty) {
+          // Проверяем сначала delta структуру (для OpenAI/GPT)
+          if (data['choices'][0].containsKey('delta') &&
+              data['choices'][0]['delta'].containsKey('content')) {
+            final content = data['choices'][0]['delta']['content'];
+            if (content != null && content.isNotEmpty) {
+              return content;
+            }
+          }
+          // Затем проверяем структуру для обычного завершения (для других моделей)
+          else if (data['choices'][0].containsKey('message') &&
+              data['choices'][0]['message'].containsKey('content')) {
+            final content = data['choices'][0]['message']['content'];
+            if (content != null && content.isNotEmpty) {
+              return content;
+            }
           }
         }
       } catch (e) {

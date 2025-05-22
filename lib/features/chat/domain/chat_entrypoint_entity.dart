@@ -25,3 +25,10 @@ class BazsuEntrypointEntity extends ChatEntrypointEntity {
   @override
   String? get predefinedQuestion => null;
 }
+
+class OnboardingEntrypointEntity extends ChatEntrypointEntity {
+  OnboardingEntrypointEntity() : super();
+
+  @override
+  String? get predefinedQuestion => null;
+}

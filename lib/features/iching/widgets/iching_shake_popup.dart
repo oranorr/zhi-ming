@@ -6,7 +6,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
-import 'package:zhi_ming/features/iching/models/hexagram.dart';
 import 'dart:developer' as developer;
 
 class IChingShakePopup extends StatefulWidget {
@@ -42,6 +41,11 @@ class _IChingShakePopupState extends State<IChingShakePopup>
   @override
   void initState() {
     super.initState();
+    _setupAnimations();
+    _setupShakeSubscription();
+  }
+
+  void _setupAnimations() {
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 500),
       vsync: this,
@@ -56,7 +60,9 @@ class _IChingShakePopupState extends State<IChingShakePopup>
     );
 
     _animationController.forward();
+  }
 
+  void _setupShakeSubscription() {
     _shakeSubscription = widget.shakeService.shakeCountStream.listen((count) {
       developer.log(
         'Встряхивание: $count из ${widget.shakeService.maxShakeCount}',
@@ -97,9 +103,8 @@ class _IChingShakePopupState extends State<IChingShakePopup>
           widget.shakeService.maxShakeCount;
 
   Future<void> _handleTap() async {
-    if (!isInitial &&
-        widget.shakeService.currentShakeCount <
-            widget.shakeService.maxShakeCount) {
+    if (widget.shakeService.currentShakeCount <
+        widget.shakeService.maxShakeCount) {
       await HapticFeedback.lightImpact();
       await widget.shakeService.shake();
       developer.log(
@@ -126,13 +131,27 @@ class _IChingShakePopupState extends State<IChingShakePopup>
   }
 
   void _finishAndGenerateLine() {
-    // Используем текущее состояние монет (которое обновляется при каждом встряхивании)
-    // Вычисляем сумму значений (Ян=3, Инь=2)
     final List<int> coinValues =
         _coinsState.map((isHeads) => isHeads ? 3 : 2).toList();
 
     final sum = coinValues.reduce((a, b) => a + b);
 
+    _logFinalCoinState(coinValues, sum);
+
+    // Сохраняем результат броска (3 монеты) в сервисе
+    widget.shakeService.saveCoinThrow(coinValues);
+    developer.log(
+      'Результат броска ${widget.currentLine} сохранен в ShakerService: $coinValues (сумма: $sum)',
+    );
+
+    // Небольшая задержка для отображения результата броска
+    Future.delayed(const Duration(milliseconds: 800), () {
+      Navigator.of(context).pop();
+      widget.onLineGenerated(sum);
+    });
+  }
+
+  void _logFinalCoinState(List<int> coinValues, int sum) {
     developer.log(
       'Финальное состояние монет: '
       '${_coinsState[0] ? "Ян(3)" : "Инь(2)"}, '
@@ -164,18 +183,6 @@ class _IChingShakePopupState extends State<IChingShakePopup>
     developer.log(
       'Результат броска: $lineType для линии ${widget.currentLine} из ${widget.totalLines}',
     );
-
-    // Сохраняем результат броска (3 монеты) в сервисе
-    widget.shakeService.saveCoinThrow(coinValues);
-    developer.log(
-      'Результат броска ${widget.currentLine} сохранен в ShakerService: $coinValues (сумма: $sum)',
-    );
-
-    // Небольшая задержка для отображения результата броска
-    Future.delayed(const Duration(milliseconds: 800), () {
-      Navigator.of(context).pop();
-      widget.onLineGenerated(sum);
-    });
   }
 
   @override
@@ -185,119 +192,230 @@ class _IChingShakePopupState extends State<IChingShakePopup>
       insetPadding: EdgeInsets.symmetric(horizontal: 20.w),
       child: Material(
         type: MaterialType.transparency,
-        child: Container(
-          width: 330.w,
-          height: 330.h,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.amber.shade50, Colors.amber.shade100],
+        child: _buildDialogContainer(context),
+      ),
+    );
+  }
+
+  Widget _buildDialogContainer(BuildContext context) {
+    return Container(
+      width: 330.w,
+      height: 330.h,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.amber.shade50, Colors.amber.shade100],
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _canDismiss ? () => _finishAndGenerateLine() : null,
+        child: Center(child: _buildAnimatedContent()),
+      ),
+    );
+  }
+
+  Widget _buildAnimatedContent() {
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scaleAnimation.value,
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CoinDisplayArea(
+                  isInitial: isInitial,
+                  coinsState: _coinsState,
+                  onTap: _handleTap,
+                ),
+                SizedBox(height: 24.h),
+                ShakeInstructions(
+                  isInitial: isInitial,
+                  currentLine: widget.currentLine,
+                  totalLines: widget.totalLines,
+                  currentShakeCount: widget.shakeService.currentShakeCount,
+                  maxShakeCount: widget.shakeService.maxShakeCount,
+                ),
+                if (!isInitial) ...[
+                  SizedBox(height: 24.h),
+                  ShakeProgressIndicator(progress: _progress),
+                ],
+              ],
             ),
-            borderRadius: BorderRadius.circular(20),
           ),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _canDismiss ? () => _finishAndGenerateLine() : null,
-            child: Center(
-              child: AnimatedBuilder(
-                animation: _animationController,
-                builder: (context, child) {
-                  return Transform.scale(
-                    scale: _scaleAnimation.value,
-                    child: Opacity(
-                      opacity: _fadeAnimation.value,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          GestureDetector(
-                            onTap: _handleTap,
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 500),
-                              child: Container(
-                                key: ValueKey<bool>(isInitial),
-                                width: 251.w,
-                                height: 174.h,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(12),
-                                  color:
-                                      !isInitial
-                                          ? Colors.white.withOpacity(0.1)
-                                          : null,
-                                ),
-                                child: Stack(
-                                  children: [
-                                    if (isInitial)
-                                      Center(
-                                        child: Image.asset('assets/shake.png'),
-                                      )
-                                    else
-                                      Center(
-                                        child: Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: List.generate(3, (index) {
-                                            return Padding(
-                                              padding: const EdgeInsets.all(8),
-                                              child: Image.asset(
-                                                _coinsState[index]
-                                                    ? 'assets/heads.png'
-                                                    : 'assets/tails.png',
-                                                width: 60,
-                                                height: 60,
-                                              ),
-                                            );
-                                          }),
-                                        ),
-                                      ),
-                                    if (!isInitial)
-                                      Positioned.fill(
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          child: InkWell(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            onTap: _handleTap,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 24.h),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: Text(
-                              key: ValueKey<bool>(isInitial),
-                              isInitial
-                                  ? 'Встряхните телефон или нажмите для броска монет\nЛиния ${widget.currentLine} из ${widget.totalLines}'
-                                  : 'Продолжайте встряхивать телефон или нажимайте на монеты\n${widget.shakeService.currentShakeCount}/${widget.shakeService.maxShakeCount} действий',
-                              style: context.styles.medium,
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          if (!isInitial) ...[
-                            SizedBox(height: 24.h),
-                            SizedBox(
-                              width: 175.w,
-                              child: LinearProgressIndicator(
-                                borderRadius: BorderRadius.circular(100),
-                                value: _progress,
-                                color: Colors.amber.shade700,
-                                backgroundColor: Colors.amber.shade200,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  );
-                },
+        );
+      },
+    );
+  }
+}
+
+class CoinDisplayArea extends StatelessWidget {
+  const CoinDisplayArea({
+    required this.isInitial,
+    required this.coinsState,
+    required this.onTap,
+    super.key,
+  });
+
+  final bool isInitial;
+  final List<bool> coinsState;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 500),
+        child: Container(
+          key: ValueKey<bool>(isInitial),
+          width: 251.w,
+          height: 200.h,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: !isInitial ? Colors.white.withOpacity(0.1) : null,
+          ),
+          child: Stack(
+            children: [
+              if (isInitial)
+                Center(child: Image.asset('assets/shake.png'))
+              else
+                CoinArrangement(coinsState: coinsState),
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onTap,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class CoinArrangement extends StatelessWidget {
+  const CoinArrangement({required this.coinsState, super.key});
+
+  final List<bool> coinsState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CoinImage(isHeads: coinsState[0]),
+              const SizedBox(width: 40),
+              CoinImage(isHeads: coinsState[1]),
+            ],
+          ),
+          CoinImage(isHeads: coinsState[2]),
+        ],
+      ),
+    );
+  }
+}
+
+class CoinImage extends StatelessWidget {
+  const CoinImage({required this.isHeads, super.key});
+
+  final bool isHeads;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 500),
+      transitionBuilder: (Widget child, Animation<double> animation) {
+        final rotationAnimation = Tween<double>(
+          begin: 0,
+          end: 1,
+        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeInOut));
+
+        return AnimatedBuilder(
+          animation: rotationAnimation,
+          child: child,
+          builder: (context, widget) {
+            final isHalfwayDone = rotationAnimation.value >= 0.5;
+            final rotationValue =
+                isHalfwayDone
+                    ? (1 - rotationAnimation.value) * pi
+                    : rotationAnimation.value * pi;
+
+            return Transform(
+              transform: Matrix4.rotationY(rotationValue),
+              alignment: Alignment.center,
+              child: widget,
+            );
+          },
+        );
+      },
+      child: Image.asset(
+        isHeads ? 'assets/heads.png' : 'assets/tails.png',
+        key: ValueKey<bool>(isHeads),
+        width: 100,
+        height: 100,
+      ),
+    );
+  }
+}
+
+class ShakeInstructions extends StatelessWidget {
+  const ShakeInstructions({
+    required this.isInitial,
+    required this.currentLine,
+    required this.totalLines,
+    required this.currentShakeCount,
+    required this.maxShakeCount,
+    super.key,
+  });
+
+  final bool isInitial;
+  final int currentLine;
+  final int totalLines;
+  final int currentShakeCount;
+  final int maxShakeCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: Text(
+        key: ValueKey<bool>(isInitial),
+        isInitial
+            ? 'Встряхните телефон или нажмите для броска монет\nЛиния $currentLine из $totalLines'
+            : 'Продолжайте встряхивать телефон или нажимайте на монеты\n$currentShakeCount/$maxShakeCount действий',
+        style: context.styles.medium,
+        textAlign: TextAlign.center,
+      ),
+    );
+  }
+}
+
+class ShakeProgressIndicator extends StatelessWidget {
+  const ShakeProgressIndicator({required this.progress, super.key});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 175.w,
+      child: LinearProgressIndicator(
+        borderRadius: BorderRadius.circular(100),
+        value: progress,
+        color: Colors.amber.shade700,
+        backgroundColor: Colors.amber.shade200,
       ),
     );
   }

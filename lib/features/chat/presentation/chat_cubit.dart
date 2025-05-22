@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/iching/models/hexagram.dart';
 import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
+import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
+import 'package:zhi_ming/core/services/deepseek/models/response_parsers.dart';
+import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 
 part 'chat_cubit.g.dart';
 
@@ -19,6 +23,7 @@ class ChatState extends Equatable {
     this.messages = const [],
     this.currentInput = '',
     this.loadingMessageIndex = -1,
+    this.lastHexagramContext, // Добавляем контекст последнего гадания
   });
   factory ChatState.fromJson(Map<String, dynamic> json) =>
       _$ChatStateFromJson(json);
@@ -28,6 +33,7 @@ class ChatState extends Equatable {
   final List<MessageEntity> messages;
   final String currentInput;
   final int loadingMessageIndex; // Индекс сообщения с индикатором загрузки
+  final HexagramContext? lastHexagramContext; // Контекст последнего гадания
 
   ChatState copyWith({
     bool? isButtonAvailable,
@@ -36,6 +42,7 @@ class ChatState extends Equatable {
     List<MessageEntity>? messages,
     String? currentInput,
     int? loadingMessageIndex,
+    HexagramContext? lastHexagramContext,
   }) {
     return ChatState(
       isButtonAvailable: isButtonAvailable ?? this.isButtonAvailable,
@@ -44,6 +51,7 @@ class ChatState extends Equatable {
       messages: messages ?? this.messages,
       currentInput: currentInput ?? this.currentInput,
       loadingMessageIndex: loadingMessageIndex ?? this.loadingMessageIndex,
+      lastHexagramContext: lastHexagramContext ?? this.lastHexagramContext,
     );
   }
 
@@ -57,11 +65,37 @@ class ChatState extends Equatable {
     messages,
     currentInput,
     loadingMessageIndex,
+    lastHexagramContext,
   ];
 }
 
+// Класс для хранения контекста последнего гадания
+@JsonSerializable()
+class HexagramContext {
+  const HexagramContext({
+    required this.originalQuestion,
+    required this.primaryHexagram,
+    required this.interpretation,
+    this.secondaryHexagram,
+  });
+
+  factory HexagramContext.fromJson(Map<String, dynamic> json) =>
+      _$HexagramContextFromJson(json);
+
+  final String originalQuestion;
+  final Hexagram primaryHexagram;
+  final Hexagram? secondaryHexagram;
+  final String interpretation;
+
+  Map<String, dynamic> toJson() => _$HexagramContextToJson(this);
+}
+
 class ChatCubit extends HydratedCubit<ChatState> {
-  ChatCubit() : super(const ChatState());
+  ChatCubit() : super(const ChatState()) {
+    _deepSeekService = DeepSeekService();
+  }
+
+  late final DeepSeekService _deepSeekService;
 
   void showInitialMessage() {
     final initialBotMessage = MessageEntity(
@@ -109,60 +143,204 @@ class ChatCubit extends HydratedCubit<ChatState> {
       ),
     );
 
-    // Имитируем процесс загрузки
-    simulateLoadingAndShowButton();
+    // Проверяем, есть ли контекст последнего гадания
+    if (state.lastHexagramContext != null) {
+      // Если есть контекст, обрабатываем как последующий вопрос
+      handleFollowUpQuestion(state.messages[0].text);
+    } else {
+      // Если контекста нет, обрабатываем как новый запрос
+      validateUserRequest(state.messages[0].text);
+    }
   }
 
-  Future<void> simulateLoadingAndShowButton() async {
-    // Создаем пустое сообщение от бота, которое будет показывать индикатор загрузки
+  Future<void> handleFollowUpQuestion(String question) async {
+    // Создаем сообщение-индикатор загрузки
     final loadingMessage = MessageEntity(
-      text: '', // Текст будет пустым, так как мы показываем только индикатор
+      text: '',
       isMe: false,
       timestamp: DateTime.now(),
     );
 
-    // Добавляем сообщение с индикатором загрузки
     final updatedMessages = List<MessageEntity>.from(state.messages)
       ..insert(0, loadingMessage);
 
-    // Устанавливаем состояние загрузки и сохраняем индекс сообщения с загрузкой
     emit(
       state.copyWith(
         messages: updatedMessages,
         isLoading: true,
-        loadingMessageIndex: 0, // Индекс первого сообщения в списке
+        loadingMessageIndex: 0,
       ),
     );
 
-    // Задержка для имитации загрузки
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      // Получаем контекст последнего гадания
+      final context = state.lastHexagramContext!;
 
-    // Явно скрываем клавиатуру перед показом кнопки
-    SystemChannels.textInput.invokeMethod('TextInput.hide');
+      // Формируем историю диалога для контекста
+      final conversationHistory =
+          state.messages
+              .where(
+                (m) => !m.isMe && m.hexagrams == null,
+              ) // Исключаем сообщения с гексаграммами
+              .map((m) => DeepSeekMessage(role: 'assistant', content: m.text))
+              .toList();
 
-    // После задержки не удаляем сообщение, а заменяем его на новое с инструкцией
-    // и показываем кнопку "бросить монету"
-    final promptMessage = MessageEntity(
-      text: '很好，现在请专注你的问题，摇动手机六次进行投币。',
+      // Отправляем запрос на обработку последующего вопроса
+      final response = await _deepSeekService.handleFollowUpQuestion(
+        question: question,
+        originalQuestion: context.originalQuestion,
+        primaryHexagram: context.primaryHexagram,
+        secondaryHexagram: context.secondaryHexagram,
+        previousInterpretation: context.interpretation,
+        conversationHistory: conversationHistory,
+      );
+
+      // Обновляем сообщение с ответом
+      final responseMessage = MessageEntity(
+        text: response,
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final messagesWithResponse = List<MessageEntity>.from(state.messages);
+      if (state.loadingMessageIndex >= 0 &&
+          state.loadingMessageIndex < messagesWithResponse.length) {
+        messagesWithResponse[state.loadingMessageIndex] = responseMessage;
+      }
+
+      emit(
+        state.copyWith(
+          messages: messagesWithResponse,
+          isLoading: false,
+          loadingMessageIndex: -1,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Ошибка при обработке последующего вопроса: $e');
+
+      final errorMessage = MessageEntity(
+        text:
+            'Произошла ошибка при обработке вашего вопроса. Пожалуйста, попробуйте сформулировать его иначе.',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final messagesWithError = List<MessageEntity>.from(state.messages);
+      if (state.loadingMessageIndex >= 0 &&
+          state.loadingMessageIndex < messagesWithError.length) {
+        messagesWithError[state.loadingMessageIndex] = errorMessage;
+      }
+
+      emit(
+        state.copyWith(
+          messages: messagesWithError,
+          isLoading: false,
+          loadingMessageIndex: -1,
+        ),
+      );
+    }
+  }
+
+  Future<void> validateUserRequest(String question) async {
+    // Создаем сообщение-индикатор загрузки
+    final loadingMessage = MessageEntity(
+      text: '',
       isMe: false,
       timestamp: DateTime.now(),
     );
 
-    final messagesWithInstruction = List<MessageEntity>.from(state.messages);
-    if (state.loadingMessageIndex >= 0 &&
-        state.loadingMessageIndex < messagesWithInstruction.length) {
-      // Заменяем сообщение с загрузкой на сообщение с инструкцией
-      messagesWithInstruction[state.loadingMessageIndex] = promptMessage;
-    }
+    final updatedMessages = List<MessageEntity>.from(state.messages)
+      ..insert(0, loadingMessage);
 
     emit(
       state.copyWith(
-        messages: messagesWithInstruction,
-        isButtonAvailable: true,
-        isLoading: false,
-        loadingMessageIndex: -1, // Сбрасываем индекс
+        messages: updatedMessages,
+        isLoading: true,
+        loadingMessageIndex: 0,
       ),
     );
+
+    // Отправляем запрос на валидацию в DeepSeekService
+    final validationResponse = await _deepSeekService.validateRequest(question);
+
+    print('Получен ответ валидации: $validationResponse');
+
+    // Явно скрываем клавиатуру перед показом результата
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+
+    // Обрабатываем результат валидации
+    if (validationResponse.status == 'valid') {
+      // Если запрос валидный, предлагаем пользователю продолжить с встряхиванием
+      final promptMessage = MessageEntity(
+        text: '很好，现在请专注你的问题，摇动手机六次进行投币。',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final messagesWithPrompt = List<MessageEntity>.from(state.messages);
+      if (state.loadingMessageIndex >= 0 &&
+          state.loadingMessageIndex < messagesWithPrompt.length) {
+        messagesWithPrompt[state.loadingMessageIndex] = promptMessage;
+      }
+
+      emit(
+        state.copyWith(
+          messages: messagesWithPrompt,
+          isButtonAvailable: true,
+          isLoading: false,
+          loadingMessageIndex: -1,
+        ),
+      );
+    } else if (validationResponse.status == 'invalid') {
+      // Если запрос не валидный, показываем сообщение с причиной
+      final errorMessage = MessageEntity(
+        text:
+            validationResponse.reasonMessage.isNotEmpty
+                ? validationResponse.reasonMessage
+                : 'Ваш вопрос не подходит для гадания. Пожалуйста, сформулируйте его иначе.',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final messagesWithError = List<MessageEntity>.from(state.messages);
+      if (state.loadingMessageIndex >= 0 &&
+          state.loadingMessageIndex < messagesWithError.length) {
+        messagesWithError[state.loadingMessageIndex] = errorMessage;
+      }
+
+      emit(
+        state.copyWith(
+          messages: messagesWithError,
+          isLoading: false,
+          loadingMessageIndex: -1,
+          // Не показываем кнопку для встряхивания
+          isButtonAvailable: false,
+        ),
+      );
+    } else {
+      // Обработка других статусов (ошибки, неизвестные ответы)
+      final errorMessage = MessageEntity(
+        text:
+            'Извините, произошла ошибка при обработке вашего вопроса. Пожалуйста, попробуйте еще раз или сформулируйте вопрос иначе.',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final messagesWithError = List<MessageEntity>.from(state.messages);
+      if (state.loadingMessageIndex >= 0 &&
+          state.loadingMessageIndex < messagesWithError.length) {
+        messagesWithError[state.loadingMessageIndex] = errorMessage;
+      }
+
+      emit(
+        state.copyWith(
+          messages: messagesWithError,
+          isLoading: false,
+          loadingMessageIndex: -1,
+          isButtonAvailable: false,
+        ),
+      );
+    }
   }
 
   void processAfterShaking(ShakerServiceRepo shakerService) {
@@ -255,29 +433,88 @@ class ChatCubit extends HydratedCubit<ChatState> {
         }
       }
 
-      // Создаем сообщение с результатами гадания
+      // Получаем вопрос пользователя (первое сообщение в истории)
+      final userQuestion =
+          state.messages
+              .firstWhere(
+                (m) => m.isMe,
+                orElse:
+                    () => MessageEntity(
+                      text: '',
+                      isMe: true,
+                      timestamp: DateTime.now(),
+                    ),
+              )
+              .text;
+
+      print('=== Начало обработки интерпретации ===');
+      print('Отправляем на интерпретацию:');
+      print('- Вопрос: $userQuestion');
+      print(
+        '- Первичная гексаграмма: ${originalHexagram.number} (${originalHexagram.name})',
+      );
+      if (changedHexagram != null) {
+        print(
+          '- Вторичная гексаграмма: ${changedHexagram.number} (${changedHexagram.name})',
+        );
+      }
+
+      // Отправляем гексаграммы на интерпретацию
+      final interpretation = await _deepSeekService.interpretHexagrams(
+        question: userQuestion,
+        primaryHexagram: originalHexagram,
+        secondaryHexagram: changedHexagram,
+      );
+
+      print('Получена интерпретация:');
+      print(interpretation);
+
+      // Обновляем гексаграммы с интерпретацией
+      final interpretedOriginalHexagram = originalHexagram.copyWith(
+        interpretation: interpretation,
+      );
+
+      final interpretedChangedHexagram = changedHexagram?.copyWith(
+        interpretation: interpretation,
+      );
+
+      print('Гексаграммы обновлены с интерпретацией');
+      print('=== Конец обработки интерпретации ===');
+
+      // Создаем сообщение с результатами гадания и интерпретацией
       final resultMessage = MessageEntity(
-        text: 'Вот результат вашего гадания:',
+        text:
+            '', // Теперь текст пустой, так как интерпретация будет в гексаграммах
         isMe: false,
         timestamp: DateTime.now(),
         hexagrams:
-            changedHexagram != null
-                ? [originalHexagram, changedHexagram]
-                : [originalHexagram],
+            interpretedChangedHexagram != null
+                ? [interpretedOriginalHexagram, interpretedChangedHexagram]
+                : [interpretedOriginalHexagram],
       );
 
       final updatedMessages = List<MessageEntity>.from(state.messages);
       if (state.loadingMessageIndex >= 0 &&
           state.loadingMessageIndex < updatedMessages.length) {
-        // Заменяем сообщение с загрузкой на сообщение с гексаграммами
+        // Заменяем сообщение с загрузкой на сообщение с гексаграммами и интерпретацией
         updatedMessages[state.loadingMessageIndex] = resultMessage;
       }
 
+      // После получения интерпретации сохраняем контекст
+      final hexagramContext = HexagramContext(
+        originalQuestion: userQuestion,
+        primaryHexagram: interpretedOriginalHexagram,
+        secondaryHexagram: interpretedChangedHexagram,
+        interpretation: interpretation,
+      );
+
+      // Обновляем состояние с сохранением контекста
       emit(
         state.copyWith(
           messages: updatedMessages,
           isLoading: false,
-          loadingMessageIndex: -1, // Сбрасываем индекс
+          loadingMessageIndex: -1,
+          lastHexagramContext: hexagramContext, // Сохраняем контекст
         ),
       );
 
@@ -505,4 +742,20 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
   @override
   Map<String, dynamic>? toJson(ChatState state) => state.toJson();
+
+  @override
+  Future<void> clear() async {
+    debugPrint('==== Полная очистка состояния ChatCubit ====');
+
+    // Сбрасываем состояние на начальное
+    emit(const ChatState());
+
+    // Вызываем очистку в родительском классе
+    await super.clear();
+
+    // Сбрасываем состояние еще раз для надежности
+    emit(const ChatState());
+
+    debugPrint('==== Состояние сброшено до начального ====');
+  }
 }

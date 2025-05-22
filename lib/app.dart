@@ -6,6 +6,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:zhi_ming/core/theme/themes.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';
+import 'package:zhi_ming/features/onboard/presentation/onboard_screen.dart';
 
 class App extends StatefulWidget {
   const App({super.key});
@@ -55,12 +57,15 @@ class _AppState extends State<App> {
       designSize: const Size(375, 812),
       builder: (_, child) {
         return MultiBlocProvider(
-          providers: [BlocProvider(create: (_) => ChatCubit())],
+          providers: [
+            BlocProvider(create: (_) => ChatCubit()),
+            BlocProvider(create: (_) => OnboardCubit()),
+          ],
           child: MaterialApp(
             title: 'Pivot App',
             theme: AppTheme.light(),
             themeMode: ThemeMode.light,
-            home: const HomePage(),
+            home: const OnboardScreen(),
             // routerConfig: _routerConfig,
             // scaffoldMessengerKey: scaffoldKey,
           ),

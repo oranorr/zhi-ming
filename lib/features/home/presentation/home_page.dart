@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'dart:ui'; // Добавляем импорт для ImageFilter
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/widgets/z_button.dart';
@@ -9,7 +10,6 @@ import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_screen.dart';
 import 'package:zhi_ming/features/home/data/local_repo.dart';
-import 'package:zhi_ming/features/iching/screens/iching_home_screen.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -66,12 +66,36 @@ class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
     final scale = 1.0 - (shrinkPercentage * 0.1);
     final isExpanded = shrinkOffset < 1;
 
-    return ColoredBox(
-      color: ZColors.white,
-      child: Transform.scale(
-        scale: scale,
-        alignment: Alignment.topCenter,
-        child: _Header(isExpanded: isExpanded),
+    // Быстрый переход от прозрачности к непрозрачности
+    final bgOpacity = shrinkPercentage < 0.05 ? 0.0 : 1.0;
+
+    // Рассчитаем elevation на основе процента скролла
+    final elevation = shrinkPercentage * 10; // Максимальная тень - 10
+
+    return DecoratedBox(
+      // Белый фон с динамической прозрачностью и тенью
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(bgOpacity),
+        boxShadow: [
+          if (shrinkPercentage > 0.05)
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1 * shrinkPercentage),
+              blurRadius: elevation,
+              spreadRadius: elevation / 3,
+            ),
+        ],
+      ),
+      // Содержимое хедера с усиленным градиентом
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient:
+              ZColors.homeGradient, // Используем созданный усиленный градиент
+        ),
+        child: Transform.scale(
+          scale: scale,
+          alignment: Alignment.topCenter,
+          child: _Header(isExpanded: isExpanded),
+        ),
       ),
     );
   }
@@ -97,12 +121,8 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: isExpanded ? Colors.transparent : ZColors.white,
-        // gradient:
-        //     isExpanded
-        //         ?
-        //         : null,
+      decoration: const BoxDecoration(
+        // Удаляем все комментарии, так как градиент теперь в SliverHeaderDelegate
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 27.w),
@@ -188,77 +208,6 @@ class _ScrollButton extends StatelessWidget {
                   ],
                 ),
               ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _IChingButton extends StatelessWidget {
-  const _IChingButton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          width: double.infinity,
-          height: 110.h,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.amber.shade200, Colors.amber.shade100],
-            ),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const IChingHomeScreen(),
-                  ),
-                );
-              },
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(18.w, 14.h, 0, 14.h),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 73.w,
-                      height: 82.h,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '易',
-                          style: TextStyle(
-                            fontSize: 40,
-                            color: Colors.amber.shade800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 21.w),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Книга Перемен', style: context.styles.regular),
-                        Text(
-                          'Узнайте свою судьбу',
-                          style: context.styles.medium,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),

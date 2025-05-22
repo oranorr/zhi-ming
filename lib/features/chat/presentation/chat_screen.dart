@@ -14,6 +14,7 @@ import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/input_send.dart';
 import 'package:zhi_ming/features/iching/widgets/iching_shake_popup.dart';
 import 'package:zhi_ming/features/iching/widgets/hexagram_widget.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({required this.entrypoint, super.key});
@@ -99,8 +100,8 @@ class _ChatScreenState extends State<ChatScreen> {
             // Даем немного времени для закрытия клавиатуры
             await Future.delayed(const Duration(milliseconds: 100));
 
-            // Очищаем сообщения
-            cubit.clearMessages();
+            // Полностью очищаем состояние кубита вместо просто очистки сообщений
+            await cubit.clear();
 
             return mounted;
           },
@@ -119,8 +120,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       // Даем немного времени для закрытия клавиатуры
                       await Future.delayed(const Duration(milliseconds: 100));
 
-                      // Очищаем сообщения
-                      cubit.clearMessages();
+                      // Полностью очищаем состояние кубита вместо просто очистки сообщений
+                      await cubit.clear();
 
                       // Возвращаемся на предыдущий экран
                       if (mounted) {
@@ -141,17 +142,17 @@ class _ChatScreenState extends State<ChatScreen> {
                       onTap: _hideKeyboard,
                       child: ListView.builder(
                         controller: _scrollController,
-                        reverse: true,
                         itemCount: state.messages.length,
                         itemBuilder: (context, index) {
-                          final message = state.messages[index];
+                          final message =
+                              state.messages[state.messages.length - 1 - index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: MessageWidget(
                               isMe: message.isMe,
                               isLoading:
                                   state.isLoading &&
-                                  index == 0 &&
+                                  index == state.messages.length - 1 &&
                                   !message.isMe,
                               text: message.text,
                               hexagrams: message.hexagrams,
@@ -230,26 +231,21 @@ class MessageWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isMe) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Flexible(
-            child: Container(
-              decoration: BoxDecoration(
-                color: ZColors.yellowLight,
-                borderRadius: BorderRadius.circular(
-                  20,
-                ).copyWith(bottomRight: Radius.zero),
-              ),
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
-              child: Text(
-                text,
-                style: context.styles.medium,
-                textAlign: TextAlign.end,
-              ),
-            ),
+      return Align(
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: 260.w,
+            minWidth: double.minPositive,
           ),
-        ],
+          margin: EdgeInsets.only(bottom: 10.h),
+          decoration: BoxDecoration(
+            color: ZColors.yellowLight,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
+          child: Text(text, style: context.styles.medium, softWrap: true),
+        ),
       );
     } else {
       return AnimatedContainer(
@@ -273,19 +269,51 @@ class MessageWidget extends StatelessWidget {
               )
             else
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Текст сообщения
-                    Text(text, style: context.styles.medium),
+                child: Container(
+                  decoration: BoxDecoration(
+                    // color: ZColors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 16.w,
+                    vertical: 12.h,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Текст сообщения - заменяем текст на MarkdownBody для поддержки форматирования
+                      if (text.isNotEmpty)
+                        MarkdownBody(
+                          data: text,
+                          styleSheet: MarkdownStyleSheet(
+                            p: context.styles.medium,
+                            h1: context.styles.h1,
+                            h2: context.styles.h2,
+                            h3: context.styles.h3,
+                            blockquote: context.styles.medium.copyWith(
+                              fontStyle: FontStyle.italic,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                            code: context.styles.medium.copyWith(
+                              fontFamily: 'monospace',
+                              backgroundColor: Colors.grey.shade200,
+                            ),
+                            codeblockDecoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          selectable: true,
+                        ),
 
-                    // Отображаем гексаграммы, если они есть
-                    if (hexagrams != null && hexagrams!.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(top: 16.h),
-                        child: _buildHexagramsSection(context),
-                      ),
-                  ],
+                      // Отображаем гексаграммы, если они есть
+                      if (hexagrams != null && hexagrams!.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(top: 16.h),
+                          child: _buildHexagramsSection(context),
+                        ),
+                    ],
+                  ),
                 ),
               ),
           ],
@@ -306,66 +334,60 @@ class MessageWidget extends StatelessWidget {
   }
 
   Widget _buildHexagramsSection(BuildContext context) {
-    // final String theTitle = [hexagram.name, hexagram.number].join(' ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Заголовок раздела с гексаграммами
-        // const Text(
-        //   'Результат предсказания:',
-        //   style: TextStyle(
-        //     fontSize: 16,
-        //     fontWeight: FontWeight.bold,
-        //     color: ZColors.blueDark,
-        //   ),
-        // ),
-        // SizedBox(height: 12.h),
-
         // Отображение гексаграмм в ряд или в столбец в зависимости от количества
         if (hexagrams!.length == 1)
           // Одна гексаграмма - просто размещаем по центру
-          Center(
-            child: HexagramWidget(
-              hexagram: hexagrams![0],
-              width: 120.w,
-              lineHeight: 16.h,
-              title: 'Ваша гексаграмма',
-            ),
+          Column(
+            children: [
+              Center(
+                child: HexagramWidget(
+                  hexagram: hexagrams![0],
+                  width: 120.w,
+                  lineHeight: 16.h,
+                  title: 'Ваша гексаграмма',
+                ),
+              ),
+              if (hexagrams![0].interpretation != null) ...[
+                SizedBox(height: 16.h),
+                hexagrams![0].buildInterpretation(context),
+              ],
+            ],
           )
         else
           // Две гексаграммы - размещаем рядом
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          Column(
             children: [
-              Expanded(
-                child: HexagramWidget(
-                  hexagram: hexagrams![0],
-                  width: 100.w,
-                  lineHeight: 12.h,
-                  title: 'Исходная',
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Expanded(
+                    child: HexagramWidget(
+                      hexagram: hexagrams![0],
+                      width: 100.w,
+                      lineHeight: 12.h,
+                      title: 'Исходная',
+                    ),
+                  ),
+                  SizedBox(width: 16.w),
+                  Expanded(
+                    child: HexagramWidget(
+                      hexagram: hexagrams![1],
+                      width: 100.w,
+                      lineHeight: 12.h,
+                      title: 'Изменяющаяся',
+                    ),
+                  ),
+                ],
               ),
-              SizedBox(width: 16.w),
-              Expanded(
-                child: HexagramWidget(
-                  hexagram: hexagrams![1],
-                  width: 100.w,
-                  lineHeight: 12.h,
-                  title: 'Изменяющаяся',
-                ),
-              ),
+              if (hexagrams![0].interpretation != null) ...[
+                SizedBox(height: 16.h),
+                hexagrams![0].buildInterpretation(context),
+              ],
             ],
           ),
-        for (final hexagram in hexagrams!) ...[
-          buildText('所得卦象:', context, isBold: true),
-          buildText([hexagram.name, hexagram.number].join(' '), context),
-          SizedBox(height: 10.h),
-          buildText('核心含义:', context, isBold: true),
-          buildText(
-            'здесь очень длинный текст описания, который может быть очень длинным и сложным для понимания',
-            context,
-          ),
-        ],
       ],
     );
   }

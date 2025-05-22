@@ -38,17 +38,17 @@ class HexagramLineWidget extends StatelessWidget {
             ),
 
           // Метка для изменяющейся линии
-          if (line.isChanging)
-            Container(
-              width: height * 1.5,
-              height: height * 1.5,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: color, width: 2),
-              ),
-              alignment: Alignment.center,
-            ),
+          // if (line.isChanging)
+          //   Container(
+          //     width: height * 1.5,
+          //     height: height * 1.5,
+          //     decoration: BoxDecoration(
+          //       color: Colors.white,
+          //       shape: BoxShape.circle,
+          //       border: Border.all(color: color, width: 2),
+          //     ),
+          //     alignment: Alignment.center,
+          //   ),
         ],
       ),
     );

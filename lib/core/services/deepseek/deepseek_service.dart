@@ -1,29 +1,33 @@
 import 'dart:async';
 import 'dart:convert';
-
-import 'package:deepseek_api/deepseek_api.dart';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 import 'package:zhi_ming/core/services/deepseek/models/response_parsers.dart';
+import 'package:zhi_ming/core/services/deepseek/prompts.dart';
+import 'package:zhi_ming/features/iching/models/hexagram.dart';
 
 enum AgentType {
   requestValidator, // Проверяет адекватность запроса пользователя
   ichingInterpreter, // Интерпретирует результаты гадания и-дзин
   onboarding, // Для онбординга
+  followUpQuestions, // Для обработки последующих вопросов
 }
 
 class DeepSeekService {
   DeepSeekService() {
-    _api = DeepSeekAPI(apiKey: _apiKey);
+    // Настраиваем Dio для прямой работы с API
     _dio.options.headers['Authorization'] = 'Bearer $_apiKey';
+    _dio.options.headers['HTTP-Referer'] = 'https://zhi-ming-app.com';
+    _dio.options.headers['X-Title'] = 'Zhi Ming App';
+    _dio.options.headers['Content-Type'] = 'application/json';
   }
   static const String _apiKey =
-      'YOUR_DEEPSEEK_API_KEY'; // Замените на свой API ключ
-  static const String _baseUrl = 'https://api.deepseek.com/v1';
+      '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';
+  static const String _baseUrl = 'https://openrouter.ai/api/v1';
 
-  late final DeepSeekAPI _api;
   final _dio = Dio();
 
   /// Отправляет запрос указанному агенту и возвращает ответ
@@ -33,40 +37,131 @@ class DeepSeekService {
     List<DeepSeekMessage>? history,
   }) async {
     try {
-      final model = _getModelByAgentType(agentType);
+      debugPrint('====== НАЧАЛО ОТПРАВКИ СООБЩЕНИЯ ======');
+      debugPrint('Тип агента: $agentType');
 
-      final messages = <ChatMessage>[];
+      final model = _getModelByAgentType(agentType);
+      debugPrint('Модель: $model');
+
+      final messages = <Map<String, dynamic>>[];
 
       // Добавляем системное сообщение в зависимости от типа агента
-      messages.add(
-        ChatMessage(
-          role: 'system',
-          content: _getSystemPromptByAgentType(agentType),
-        ),
+      final systemPrompt = _getSystemPromptByAgentType(agentType);
+      debugPrint(
+        'Системный промпт (первые 100 символов): ${systemPrompt.substring(0, min(100, systemPrompt.length))}...',
       );
+
+      messages.add({'role': 'system', 'content': systemPrompt});
 
       // Добавляем историю сообщений, если она предоставлена
       if (history != null && history.isNotEmpty) {
-        messages.addAll(
-          history.map((m) => ChatMessage(role: m.role, content: m.content)),
-        );
+        debugPrint('История сообщений: ${history.length} сообщений');
+        messages.addAll(history.map((m) => m.toMap()));
+      } else {
+        debugPrint('История сообщений: отсутствует');
       }
 
       // Добавляем текущее сообщение пользователя
-      messages.add(ChatMessage(role: 'user', content: message));
+      String messagePreview =
+          message.length > 100 ? '${message.substring(0, 100)}...' : message;
+      debugPrint('Сообщение пользователя: $messagePreview');
+      messages.add({'role': 'user', 'content': message});
 
-      final request = ChatCompletionRequest(
-        model: model,
-        messages: messages,
-        temperature: 0.7,
-        maxTokens: 1000,
+      // Формируем тело запроса в соответствии с OpenRouter API
+      final requestBody = {
+        'model': model,
+        'messages': messages,
+        'temperature': 0.7,
+        'max_tokens': 1000,
+      };
+
+      // Логируем часть тела запроса (без вывода полного содержимого)
+      debugPrint('Тело запроса: частичное содержимое...');
+      debugPrint('URL: $_baseUrl/chat/completions');
+      debugPrint(
+        'Headers: Content-Type: application/json, Authorization: Bearer sk-*****, HTTP-Referer: https://zhi-ming-app.com',
       );
 
-      final response = await _api.createChatCompletion(request);
-      return response.choices.first.message.content;
-    } catch (e) {
-      debugPrint('Ошибка при отправке сообщения в DeepSeek API: $e');
-      return 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.';
+      // Отправляем запрос напрямую через Dio
+      debugPrint('Выполняем POST запрос...');
+      final response = await _dio.post(
+        '$_baseUrl/chat/completions',
+        data: requestBody,
+      );
+
+      debugPrint('Получен ответ от сервера. Статус: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        // Защита от null с подробным логированием
+        final responseData = response.data;
+
+        if (responseData == null) {
+          debugPrint('ОШИБКА: response.data == null');
+          return 'Сервер вернул пустой ответ. Пожалуйста, попробуйте позже.';
+        }
+
+        debugPrint(
+          'Получены данные. Структура ответа: ${responseData.runtimeType}',
+        );
+
+        final choices = responseData['choices'];
+        if (choices == null) {
+          debugPrint('ОШИБКА: choices == null');
+          debugPrint('Полный ответ: $responseData');
+          return 'Сервер вернул ответ без поля choices. Пожалуйста, попробуйте позже.';
+        }
+
+        if (choices is! List || choices.isEmpty) {
+          debugPrint('ОШИБКА: choices пуст или не является списком');
+          debugPrint(
+            'Тип choices: ${choices.runtimeType}, содержимое: $choices',
+          );
+          return 'Сервер вернул пустой список вариантов. Пожалуйста, попробуйте позже.';
+        }
+
+        final firstChoice = choices[0];
+        if (firstChoice == null) {
+          debugPrint('ОШИБКА: firstChoice == null');
+          return 'Сервер вернул некорректный ответ. Пожалуйста, попробуйте позже.';
+        }
+
+        debugPrint('Первый элемент choices: $firstChoice');
+
+        final messageObj = firstChoice['message'];
+        if (messageObj == null) {
+          debugPrint('ОШИБКА: message == null');
+          debugPrint('Содержимое firstChoice: $firstChoice');
+          return 'Сервер вернул ответ без поля message. Пожалуйста, попробуйте позже.';
+        }
+
+        final content = messageObj['content'];
+        if (content == null) {
+          debugPrint('ОШИБКА: content == null');
+          debugPrint('Содержимое message: $messageObj');
+          return 'Сервер вернул сообщение без содержимого. Пожалуйста, попробуйте позже.';
+        }
+
+        String contentPreview = content.toString();
+        if (contentPreview.length > 100) {
+          contentPreview = '${contentPreview.substring(0, 100)}...';
+        }
+        debugPrint('Успешно получен ответ: $contentPreview');
+        debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ ======');
+
+        return content.toString();
+      } else {
+        debugPrint('ОШИБКА при отправке сообщения: ${response.statusCode}');
+        debugPrint('Тело ответа с ошибкой: ${response.data}');
+        debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ОШИБКОЙ) ======');
+        return 'Ошибка при обработке запроса: ${response.statusCode}';
+      }
+    } catch (e, stackTrace) {
+      debugPrint('ИСКЛЮЧЕНИЕ при отправке сообщения в API: $e');
+      debugPrint(
+        'Stack trace: ${stackTrace.toString().split("\n").take(10).join("\n")}',
+      );
+      debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ИСКЛЮЧЕНИЕМ) ======');
+      return 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже. Детали: $e';
     }
   }
 
@@ -100,6 +195,8 @@ class DeepSeekService {
       final headers = {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $_apiKey',
+        'HTTP-Referer': 'https://zhi-ming-app.com',
+        'X-Title': 'Zhi Ming App',
       };
 
       final requestBody = jsonEncode({
@@ -118,7 +215,7 @@ class DeepSeekService {
 
       if (response.statusCode == 200) {
         await for (final chunk in response.stream.transform(utf8.decoder)) {
-          // DeepSeek возвращает данные в формате SSE (Server-Sent Events)
+          // API возвращает данные в формате SSE (Server-Sent Events)
           // Каждое событие начинается с 'data: '
           final lines = chunk.split('\n');
           for (final line in lines) {
@@ -129,9 +226,14 @@ class DeepSeekService {
           }
         }
       } else {
-        yield 'Ошибка стриминга: ${response.statusCode}';
+        // Получаем тело ответа для диагностики
+        final responseBody = await response.stream.bytesToString();
+        debugPrint('Ошибка стриминга: ${response.statusCode}');
+        debugPrint('Тело ответа: $responseBody');
+        yield 'Ошибка стриминга: ${response.statusCode}. Детали: $responseBody';
       }
     } catch (e) {
+      debugPrint('Исключение при стриминге: $e');
       yield 'Произошла ошибка при обработке запроса: $e';
     }
   }
@@ -144,10 +246,78 @@ class DeepSeekService {
         message: request,
       );
 
-      // Пытаемся распарсить ответ как JSON
+      debugPrint('Получен сырой ответ от валидатора: $response');
+
+      // Очищаем ответ от маркеров Markdown
+      String cleanedResponse = response;
+
+      // Удаляем блоки кода markdown
+      final markdownCodeRegex = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```');
+      final match = markdownCodeRegex.firstMatch(cleanedResponse);
+
+      if (match != null && match.groupCount >= 1) {
+        // Извлекаем только содержимое внутри блока кода
+        cleanedResponse = match.group(1)?.trim() ?? cleanedResponse;
+        debugPrint('Извлеченный JSON после очистки: $cleanedResponse');
+      }
+
+      // Проверяем, содержит ли ответ ключевые слова, указывающие на статус
+      // Некоторые модели могут не строго следовать формату JSON
+      if (!cleanedResponse.contains('"status":') &&
+          !cleanedResponse.contains("'status':")) {
+        if (cleanedResponse.toLowerCase().contains('invalid') ||
+            cleanedResponse.toLowerCase().contains('не подходит') ||
+            cleanedResponse.toLowerCase().contains('некорректный') ||
+            cleanedResponse.toLowerCase().contains('ошибка')) {
+          // Используем простой подход к извлечению причины
+          String reason = cleanedResponse;
+          // Пытаемся убрать техническую информацию
+          if (reason.contains('reason')) {
+            final parts = reason.split('reason');
+            if (parts.length > 1) {
+              reason = parts[1];
+            }
+          }
+
+          // Убираем кавычки и скобки
+          reason =
+              reason
+                  .replaceAll('"', '')
+                  .replaceAll("'", '')
+                  .replaceAll('{', '')
+                  .replaceAll('}', '')
+                  .replaceAll(':', '')
+                  .replaceAll('Message', '')
+                  .replaceAll('message', '')
+                  .trim();
+
+          return RequestValidationResponse(
+            status: 'invalid',
+            reasonMessage: reason,
+          );
+        } else {
+          // Предполагаем, что валидно, если нет явных указаний на обратное
+          return RequestValidationResponse(status: 'valid', reasonMessage: '');
+        }
+      }
+
+      // Пытаемся распарсить очищенный ответ как JSON
       try {
-        return RequestValidationResponse.fromJson(response);
+        return RequestValidationResponse.fromJson(cleanedResponse);
       } catch (e) {
+        debugPrint('Ошибка парсинга JSON: $e');
+
+        // Проверяем содержимое ответа на ключевые слова
+        if (cleanedResponse.toLowerCase().contains('invalid')) {
+          return RequestValidationResponse(
+            status: 'invalid',
+            reasonMessage:
+                'Ваш вопрос не подходит для гадания. Пожалуйста, сформулируйте его более конкретно.',
+          );
+        } else if (cleanedResponse.toLowerCase().contains('valid')) {
+          return RequestValidationResponse(status: 'valid', reasonMessage: '');
+        }
+
         // Если не удалось распарсить как JSON, возвращаем стандартный формат
         return RequestValidationResponse.unknown(
           'Не удалось обработать ответ: $response',
@@ -158,15 +328,330 @@ class DeepSeekService {
     }
   }
 
+  /// Извлекает markdown-текст из ответа агента (парсит JSON, если нужно)
+  String _extractMarkdownFromResponse(String response) {
+    // Проверка на пустой ответ
+    debugPrint(
+      '--- Начало обработки ответа в _extractMarkdownFromResponse ---',
+    );
+    String result = response.trim() ?? '';
+
+    if (result.isEmpty) {
+      debugPrint('Получен пустой ответ, возвращаем пустую строку');
+      return '';
+    }
+
+    debugPrint('Исходный ответ (длина: ${result.length})');
+    debugPrint('Тип ответа: ${result.runtimeType}');
+    String previewOrig =
+        result.length > 100 ? '${result.substring(0, 100)}...' : result;
+    debugPrint('Начало ответа: $previewOrig');
+
+    // Попробовать распарсить JSON из строки
+    try {
+      // Иногда агент возвращает JSON внутри строки, обрезаем кавычки если есть
+      String jsonCandidate = result;
+      if (jsonCandidate.startsWith('"') && jsonCandidate.endsWith('"')) {
+        jsonCandidate = jsonCandidate.substring(1, jsonCandidate.length - 1);
+        debugPrint('Обрезаны кавычки по краям');
+      }
+
+      // Убираем экранирование кавычек
+      if (jsonCandidate.contains(r'\"')) {
+        String before = jsonCandidate;
+        jsonCandidate = jsonCandidate.replaceAll(r'\"', '"');
+        debugPrint(
+          'Заменено ${before.length - jsonCandidate.length} экранированных кавычек',
+        );
+      }
+
+      debugPrint('Пробуем распарсить JSON...');
+      final parsed = jsonDecode(jsonCandidate);
+      debugPrint('JSON успешно распарсен! Тип: ${parsed.runtimeType}');
+
+      if (parsed != null && parsed is Map) {
+        debugPrint('Содержит поля: ${parsed.keys.join(", ")}');
+
+        // Пробуем взять наиболее вероятные поля
+        if (parsed.containsKey('interpretation')) {
+          final interpretation = parsed['interpretation'];
+          if (interpretation != null) {
+            result = interpretation.toString();
+            debugPrint('Извлечен текст из поля interpretation');
+          } else {
+            debugPrint('Поле interpretation существует, но содержит null');
+          }
+        } else if (parsed.containsKey('answer')) {
+          final answer = parsed['answer'];
+          if (answer != null) {
+            result = answer.toString();
+            debugPrint('Извлечен текст из поля answer');
+          } else {
+            debugPrint('Поле answer существует, но содержит null');
+          }
+        } else {
+          // Если есть только одно текстовое поле — взять его
+          debugPrint(
+            'Нет полей interpretation или answer, ищем текстовое поле...',
+          );
+          for (final entry in parsed.entries) {
+            debugPrint(
+              'Проверяем поле ${entry.key}: ${entry.value.runtimeType}',
+            );
+            if (entry.value is String) {
+              result = entry.value as String;
+              debugPrint('Извлечен текст из поля ${entry.key}');
+              break;
+            }
+          }
+        }
+      } else {
+        debugPrint(
+          'Распарсенный JSON не является объектом или равен null: $parsed',
+        );
+      }
+    } catch (e) {
+      // Не JSON — оставляем как есть
+      debugPrint('Не удалось распарсить JSON: $e');
+      debugPrint('Используем исходный ответ');
+    }
+
+    // Удаляем лишние кавычки по краям
+    result = result.trim();
+    if (result.startsWith('"') && result.endsWith('"')) {
+      result = result.substring(1, result.length - 1);
+      debugPrint('Обрезаны кавычки вокруг результата');
+    }
+
+    // Логируем итоговый результат
+    String preview =
+        result.length > 100 ? '${result.substring(0, 100)}...' : result;
+    debugPrint('Итоговый результат (длина: ${result.length}): $preview');
+    debugPrint('--- Конец обработки ответа ---');
+
+    return result;
+  }
+
+  /// Отправляет запрос интерпретатору гексаграмм
+  Future<String> interpretHexagrams({
+    required String question,
+    required Hexagram primaryHexagram,
+    Hexagram? secondaryHexagram,
+  }) async {
+    try {
+      debugPrint('=== Начало интерпретации гексаграмм ===');
+      debugPrint('Вопрос пользователя: $question');
+      debugPrint('Первичная гексаграмма:');
+      debugPrint('- Номер: ${primaryHexagram.number}');
+      debugPrint('- Название: ${primaryHexagram.name}');
+      debugPrint('- Бинарный код: ${primaryHexagram.binaryId}');
+      debugPrint('- Описание: ${primaryHexagram.description}');
+      debugPrint(
+        '- Изменяющиеся линии: ${primaryHexagram.lines.asMap().entries.where((e) => e.value.isChanging).map((e) => e.key + 1).toList()}',
+      );
+
+      if (secondaryHexagram != null) {
+        debugPrint('Вторичная гексаграмма:');
+        debugPrint('- Номер: ${secondaryHexagram.number}');
+        debugPrint('- Название: ${secondaryHexagram.name}');
+        debugPrint('- Бинарный код: ${secondaryHexagram.binaryId}');
+        debugPrint('- Описание: ${secondaryHexagram.description}');
+      }
+
+      // Формируем сообщение для интерпретатора
+      final message = jsonEncode({
+        'question': question,
+        'primary_hexagram': {
+          'hexa_name': primaryHexagram.name,
+          'hexa_info': primaryHexagram.description,
+          'number': primaryHexagram.number,
+          'changing_lines':
+              primaryHexagram.lines
+                  .asMap()
+                  .entries
+                  .where((e) => e.value.isChanging)
+                  .map((e) => e.key + 1)
+                  .toList(),
+        },
+        if (secondaryHexagram != null)
+          'secondary_hexagram': {
+            'hexa_name': secondaryHexagram.name,
+            'hexa_info': secondaryHexagram.description,
+            'number': secondaryHexagram.number,
+          },
+      });
+
+      debugPrint('Отправляем запрос интерпретатору:');
+      debugPrint(message);
+
+      // Отправляем запрос интерпретатору
+      final response = await sendMessage(
+        agentType: AgentType.ichingInterpreter,
+        message: message,
+      );
+
+      debugPrint('Получен ответ от интерпретатора:');
+      debugPrint(response);
+      debugPrint('=== Конец интерпретации гексаграмм ===');
+
+      // Извлекаем markdown-текст из ответа
+      final cleaned = _extractMarkdownFromResponse(response);
+      return cleaned;
+    } catch (e) {
+      debugPrint('Ошибка при интерпретации гексаграмм: $e');
+      debugPrint('=== Конец интерпретации гексаграмм (с ошибкой) ===');
+      return 'Произошла ошибка при интерпретации гексаграмм. Пожалуйста, попробуйте позже.';
+    }
+  }
+
+  /// Обрабатывает последующие вопросы пользователя с учетом контекста предыдущего гадания
+  Future<String> handleFollowUpQuestion({
+    required String question,
+    required String originalQuestion,
+    required Hexagram primaryHexagram,
+    Hexagram? secondaryHexagram,
+    String? previousInterpretation,
+    List<DeepSeekMessage>? conversationHistory,
+  }) async {
+    try {
+      debugPrint('====== НАЧАЛО ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА ======');
+      debugPrint('Текущий вопрос: $question');
+      debugPrint('Исходный вопрос: $originalQuestion');
+
+      // Логируем информацию о первичной гексаграмме
+      debugPrint('Первичная гексаграмма:');
+      debugPrint('- Номер: ${primaryHexagram.number ?? "отсутствует"}');
+      debugPrint('- Название: ${primaryHexagram.name ?? "отсутствует"}');
+
+      // Логируем информацию о вторичной гексаграмме, если есть
+      if (secondaryHexagram != null) {
+        debugPrint('Вторичная гексаграмма:');
+        debugPrint('- Номер: ${secondaryHexagram.number ?? "отсутствует"}');
+        debugPrint('- Название: ${secondaryHexagram.name ?? "отсутствует"}');
+      } else {
+        debugPrint('Вторичная гексаграмма: отсутствует');
+      }
+
+      // Логируем информацию о предыдущей интерпретации
+      if (previousInterpretation != null && previousInterpretation.isNotEmpty) {
+        String preview =
+            previousInterpretation.length > 100
+                ? '${previousInterpretation.substring(0, 100)}...'
+                : previousInterpretation;
+        debugPrint('Предыдущая интерпретация: $preview');
+      } else {
+        debugPrint('Предыдущая интерпретация: отсутствует или пуста');
+      }
+
+      // Логируем информацию об истории диалога
+      if (conversationHistory != null && conversationHistory.isNotEmpty) {
+        debugPrint('История диалога: ${conversationHistory.length} сообщений');
+        for (int i = 0; i < min(3, conversationHistory.length); i++) {
+          debugPrint(
+            '- Сообщение ${i + 1}: роль=${conversationHistory[i].role}, '
+            'текст=${conversationHistory[i].content.substring(0, min(30, conversationHistory[i].content.length))}...',
+          );
+        }
+      } else {
+        debugPrint('История диалога: отсутствует');
+      }
+
+      // Формируем сообщение с контекстом с защитой от null
+      debugPrint('Формируем контекст для запроса...');
+      final contextMap = {
+        'current_question': question,
+        'original_question': originalQuestion,
+        'primary_hexagram': {
+          'hexa_name': primaryHexagram.name ?? '',
+          'hexa_info': primaryHexagram.description ?? '',
+          'number': primaryHexagram.number ?? 0,
+          'changing_lines':
+              primaryHexagram.lines
+                  .asMap()
+                  .entries
+                  .where((e) => e.value.isChanging)
+                  .map((e) => e.key + 1)
+                  .toList() ??
+              [],
+        },
+        if (secondaryHexagram != null)
+          'secondary_hexagram': {
+            'hexa_name': secondaryHexagram.name ?? '',
+            'hexa_info': secondaryHexagram.description ?? '',
+            'number': secondaryHexagram.number ?? 0,
+          },
+        'previous_interpretation': previousInterpretation ?? '',
+      };
+
+      debugPrint('Структура контекста: ${contextMap.keys.join(", ")}');
+      final contextMessage = jsonEncode(contextMap);
+
+      // Отправляем запрос с учетом истории диалога
+      debugPrint('Отправляем запрос агенту followUpQuestions...');
+      final response = await sendMessage(
+        agentType: AgentType.followUpQuestions,
+        message: contextMessage,
+        history: conversationHistory,
+      );
+
+      // Проверяем полученный ответ
+      if (response.isEmpty) {
+        debugPrint('ОШИБКА: Получен пустой ответ от sendMessage');
+        debugPrint(
+          '====== КОНЕЦ ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА (С ОШИБКОЙ) ======',
+        );
+        return 'Сервер вернул пустой ответ на ваш вопрос. Пожалуйста, попробуйте позже.';
+      }
+
+      debugPrint(
+        'Получен ответ от сервиса sendMessage (длина: ${response.length})',
+      );
+
+      String responsePreview =
+          response.length > 100 ? '${response.substring(0, 100)}...' : response;
+      debugPrint('Ответ: $responsePreview');
+
+      // Парсим markdown/JSON как и для основной интерпретации
+      debugPrint('Очищаем ответ от JSON/Markdown...');
+      final cleaned = _extractMarkdownFromResponse(response);
+
+      if (cleaned.isEmpty) {
+        debugPrint('ПРЕДУПРЕЖДЕНИЕ: После очистки ответ стал пустым');
+        debugPrint(
+          '====== КОНЕЦ ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА (С ПРЕДУПРЕЖДЕНИЕМ) ======',
+        );
+        return 'Не удалось обработать ответ сервера. Пожалуйста, попробуйте задать вопрос иначе.';
+      }
+
+      String cleanedPreview =
+          cleaned.length > 100 ? '${cleaned.substring(0, 100)}...' : cleaned;
+      debugPrint('Очищенный ответ: $cleanedPreview');
+      debugPrint('====== КОНЕЦ ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА ======');
+
+      return cleaned;
+    } catch (e, stackTrace) {
+      debugPrint('ИСКЛЮЧЕНИЕ при обработке последующего вопроса: $e');
+      debugPrint(
+        'Stack trace: ${stackTrace.toString().split("\n").take(10).join("\n")}',
+      );
+      debugPrint(
+        '====== КОНЕЦ ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА (С ОШИБКОЙ) ======',
+      );
+      return 'Произошла ошибка при обработке вашего вопроса. Пожалуйста, попробуйте сформулировать его иначе. Детали: $e';
+    }
+  }
+
   // Возвращает модель в зависимости от типа агента
   String _getModelByAgentType(AgentType agentType) {
     switch (agentType) {
       case AgentType.requestValidator:
-        return 'deepseek-chat'; // Быстрый базовый агент для проверки запросов
+        return 'deepseek/deepseek-prover-v2:free';
       case AgentType.ichingInterpreter:
-        return 'deepseek-chat'; // Агент для интерпретации результатов
+        return 'deepseek/deepseek-prover-v2:free';
       case AgentType.onboarding:
-        return 'deepseek-chat'; // Агент для онбординга
+        return 'deepseek/deepseek-prover-v2:free';
+      case AgentType.followUpQuestions:
+        return 'deepseek/deepseek-prover-v2:free';
     }
   }
 
@@ -174,40 +659,39 @@ class DeepSeekService {
   String _getSystemPromptByAgentType(AgentType agentType) {
     switch (agentType) {
       case AgentType.requestValidator:
-        return '''
-Ты - агент проверки пользовательских запросов. Твоя задача - определить, является ли запрос пользователя адекватным и подходящим для гадания И-Цзин.
-
-Правила:
-1. Оценивай запрос с точки зрения его ясности, конкретности и этичности.
-2. Не принимай запросы, содержащие угрозы, оскорбления, запросы на нелегальную деятельность.
-3. Запросы должны быть связаны с поиском совета, мудрости или решения личной проблемы.
-
-Твой ответ должен быть строго в следующем JSON формате:
-{
-  "status": "valid" или "invalid",
-  "reasonMessage": "Объяснение, почему запрос принят или отклонен"
-}
-''';
+        return validator;
       case AgentType.ichingInterpreter:
-        return '''
-Ты - эксперт по толкованию гексаграмм И-Цзин (Книги Перемен). Пользователь задал вопрос и получил гексаграмму. Твоя задача - интерпретировать эту гексаграмму в контексте вопроса пользователя.
-
-Правила:
-1. Объясни значение гексаграммы в целом.
-2. Опиши, как это значение применимо к вопросу пользователя.
-3. Предложи конкретные рекомендации на основе полученной гексаграммы.
-4. Будь конкретным, но не директивным - предлагай возможные пути, но подчеркивай, что окончательное решение остается за пользователем.
-''';
+        return interpreter;
       case AgentType.onboarding:
-        return '''
-Ты - гид по гаданию И-Цзин. Твоя цель - помочь пользователю понять, что такое И-Цзин, как им пользоваться и что ожидать от результатов.
+        return onboarder;
+      case AgentType.followUpQuestions:
+        return followUpQuestionsPrompt; // Нужно будет добавить этот промпт
+    }
+  }
 
-Правила:
-1. Объясняй простым, понятным языком, избегая чрезмерно эзотерических терминов.
-2. Рассказывай о традиции И-Цзин, его истории и значении.
-3. Объясни, как формулировать вопросы для наилучших результатов.
-4. Помогай пользователю понять, как интерпретировать полученные ответы.
-''';
+  // Метод для тестирования соединения
+  Future<String> testConnection() async {
+    try {
+      // Простой запрос для проверки соединения
+      final response = await _dio.post(
+        '$_baseUrl/chat/completions',
+        data: {
+          'model': 'deepseek/deepseek-prover-v2:free',
+          'messages': [
+            {'role': 'user', 'content': 'Привет, это тестовое сообщение.'},
+          ],
+          'temperature': 0.7,
+          'max_tokens': 100,
+        },
+      );
+
+      debugPrint('Статус ответа: ${response.statusCode}');
+      debugPrint('Тело ответа: ${response.data}');
+
+      return 'Соединение успешно установлено. Статус: ${response.statusCode}';
+    } catch (e) {
+      debugPrint('Ошибка при тестировании соединения: $e');
+      return 'Ошибка соединения: $e';
     }
   }
 }

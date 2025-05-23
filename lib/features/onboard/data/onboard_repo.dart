@@ -1,7 +1,4 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/core/theme/theme_colors.dart';
@@ -9,100 +6,44 @@ import 'package:zhi_ming/core/theme/theme_colors.dart';
 class OnboardRepo {
   static List<Interest> interests = [
     Interest(
-      name: '塔罗牌',
-      asset: 'assets/icons/candle.png',
-      color: ZColors.blueLight,
-    ),
-    Interest(
-      name: '星座',
-      asset: 'assets/icons/stairs.png',
+      name: '爱情与关系',
+      asset: 'assets/icons/love.png',
       color: ZColors.purpleMiddle,
     ),
     Interest(
-      name: '命理',
-      asset: 'assets/icons/flower.png',
-      color: ZColors.pinkLight,
-    ),
-    Interest(
-      name: '易经',
-      asset: 'assets/scroll.png',
-      color: ZColors.yellowMiddle,
-    ),
-    Interest(
-      name: '占星',
-      asset: 'assets/icons/image 133.png',
-      color: ZColors.purpleLight,
-    ),
-    Interest(
-      name: '手相',
-      asset: 'assets/icons/human.png',
-      color: ZColors.pinkDark,
-    ),
-    Interest(
-      name: '面相',
-      asset: 'assets/icons/heart.png',
-      color: ZColors.blueMiddle,
-    ),
-    Interest(
-      name: '风水',
-      asset: 'assets/icons/flower_2.png',
-      color: ZColors.yellowLight,
-    ),
-    Interest(
-      name: '梦境',
-      asset: 'assets/icons/kite.png',
-      color: ZColors.purpleMiddle,
-    ),
-    Interest(
-      name: '灵数',
-      asset: 'assets/icons/weights.png',
+      name: '职业与事业',
+      asset: 'assets/icons/career.png',
       color: ZColors.blueDark,
     ),
-    Interest(name: '算命', asset: 'assets/coins.png', color: ZColors.pinkMiddle),
     Interest(
-      name: '紫微斗数',
-      asset: 'assets/icons/candle.png',
-      color: ZColors.yellowMiddle,
-    ),
-    Interest(
-      name: '水晶球',
-      asset: 'assets/icons/image 133.png',
-      color: ZColors.blueLight,
-    ),
-    Interest(
-      name: '生辰八字',
-      asset: 'assets/scroll.png',
+      name: '财富与运势',
+      asset: 'assets/icons/money.png',
       color: ZColors.purpleLight,
     ),
     Interest(
-      name: '符咒',
-      asset: 'assets/icons/flower.png',
-      color: ZColors.pinkDark,
-    ),
-    Interest(
-      name: '茶叶占卜',
-      asset: 'assets/icons/kite.png',
-      color: ZColors.blueMiddle,
-    ),
-    Interest(
-      name: '八卦',
-      asset: 'assets/icons/weights.png',
-      color: ZColors.purpleMiddle,
-    ),
-    Interest(
-      name: '六爻',
-      asset: 'assets/icons/stairs.png',
-      color: ZColors.yellowLight,
-    ),
-    Interest(
-      name: '姓名学',
-      asset: 'assets/icons/human.png',
+      name: '自我成长与内在平衡',
+      asset: 'assets/icons/harmony.png',
       color: ZColors.pinkMiddle,
     ),
     Interest(
-      name: '灵摆',
-      asset: 'assets/icons/heart.png',
-      color: ZColors.blueDark,
+      name: '家庭与住房',
+      asset: 'assets/icons/home.png',
+      color: ZColors.yellowLight,
+    ),
+    Interest(
+      name: '未来预测',
+      asset: 'assets/icons/future.png',
+      color: ZColors.pinkDark,
+    ),
+    Interest(
+      name: '教育与自我实现',
+      asset: 'assets/icons/study.png',
+      color: ZColors.blueLight,
+    ),
+    Interest(
+      name: '旅行与搬迁',
+      asset: 'assets/icons/travel.png',
+      color: ZColors.purpleMiddle,
     ),
   ];
 }
@@ -162,26 +103,22 @@ class _InterestChipState extends State<InterestChip> {
             Text(widget.interest.name, style: context.styles.mediumDemilight),
             SizedBox(width: 10.w),
             Container(
-              width: 24.r,
-              height: 24.r,
+              width: 20,
+              height: 20,
+
               decoration: BoxDecoration(
                 color: widget.isSelected ? ZColors.blueDark : ZColors.white,
-                borderRadius: BorderRadius.circular(8.r),
+
+                borderRadius: BorderRadius.circular(6),
+                border:
+                    widget.isSelected ? null : Border.all(color: ZColors.gray),
+                // shape:
               ),
               child:
                   widget.isSelected
-                      ? Icon(
-                        Icons.check,
-                        size: 16.r,
-                        color: widget.interest.color,
-                      )
+                      ? const Icon(Icons.check, size: 20, color: Colors.white)
                       : null,
             ),
-            // Container(
-            //   width: 24.w,
-            //   height: 24.h,
-            //   decoration:
-            // ),
           ],
         ),
       ),

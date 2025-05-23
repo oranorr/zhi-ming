@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/features/iching/models/hexagram.dart';
 import 'package:zhi_ming/features/iching/widgets/hexagram_line.dart';
 
@@ -36,9 +34,6 @@ class HexagramWidget extends StatelessWidget {
               line:
                   hexagram.lines[5 -
                       index], // Переворачиваем для отображения снизу вверх
-              width: width,
-              height: lineHeight,
-              color: color,
             ),
           ),
         ).reversed, // Отображаем снизу вверх

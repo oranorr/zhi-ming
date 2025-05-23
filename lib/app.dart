@@ -99,8 +99,8 @@ class _AppState extends State<App> {
             home:
                 _isInitializing
                     ? const _LoadingScreen() // Экран загрузки пока проверяем статус
-                    // : !kDebugMode
-                    : _onboardingCompleted
+                    : !kDebugMode
+                    // : _onboardingCompleted
                     ? const HomePage() // Если онбординг пройден, показываем главную страницу
                     : const OnboardScreen(), // Иначе показываем экран онбординга
             // routerConfig: _routerConfig,

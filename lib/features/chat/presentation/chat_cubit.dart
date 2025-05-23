@@ -22,6 +22,8 @@ class ChatState extends Equatable {
     this.currentInput = '',
     this.loadingMessageIndex = -1,
     this.lastHexagramContext, // Добавляем контекст последнего гадания
+    this.currentQuestionContext =
+        const [], // Контекст текущего формирующегося вопроса
   });
   factory ChatState.fromJson(Map<String, dynamic> json) =>
       _$ChatStateFromJson(json);
@@ -32,6 +34,8 @@ class ChatState extends Equatable {
   final String currentInput;
   final int loadingMessageIndex; // Индекс сообщения с индикатором загрузки
   final HexagramContext? lastHexagramContext; // Контекст последнего гадания
+  final List<String>
+  currentQuestionContext; // Накопленный контекст текущего вопроса
 
   ChatState copyWith({
     bool? isButtonAvailable,
@@ -41,6 +45,7 @@ class ChatState extends Equatable {
     String? currentInput,
     int? loadingMessageIndex,
     HexagramContext? lastHexagramContext,
+    List<String>? currentQuestionContext,
   }) {
     return ChatState(
       isButtonAvailable: isButtonAvailable ?? this.isButtonAvailable,
@@ -50,6 +55,8 @@ class ChatState extends Equatable {
       currentInput: currentInput ?? this.currentInput,
       loadingMessageIndex: loadingMessageIndex ?? this.loadingMessageIndex,
       lastHexagramContext: lastHexagramContext ?? this.lastHexagramContext,
+      currentQuestionContext:
+          currentQuestionContext ?? this.currentQuestionContext,
     );
   }
 
@@ -64,6 +71,7 @@ class ChatState extends Equatable {
     currentInput,
     loadingMessageIndex,
     lastHexagramContext,
+    currentQuestionContext,
   ];
 }
 
@@ -143,11 +151,21 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
     // Проверяем, есть ли контекст последнего гадания
     if (state.lastHexagramContext != null) {
-      // Если есть контекст, обрабатываем как последующий вопрос
+      // Если есть контекст последнего гадания, обрабатываем как последующий вопрос
       handleFollowUpQuestion(state.messages[0].text);
     } else {
-      // Если контекста нет, обрабатываем как новый запрос
-      validateUserRequest(state.messages[0].text);
+      // Если контекста последнего гадания нет, работаем с контекстом текущего вопроса
+
+      // Добавляем новое сообщение к контексту текущего вопроса
+      final updatedQuestionContext = List<String>.from(
+        state.currentQuestionContext,
+      )..add(state.messages[0].text);
+
+      // Обновляем состояние с новым контекстом
+      emit(state.copyWith(currentQuestionContext: updatedQuestionContext));
+
+      // Валидируем весь накопленный контекст
+      validateUserRequest(updatedQuestionContext);
     }
   }
 
@@ -239,7 +257,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
     }
   }
 
-  Future<void> validateUserRequest(String question) async {
+  Future<void> validateUserRequest(List<String> questionContext) async {
     // Создаем сообщение-индикатор загрузки
     final loadingMessage = MessageEntity(
       text: '',
@@ -258,8 +276,10 @@ class ChatCubit extends HydratedCubit<ChatState> {
       ),
     );
 
-    // Отправляем запрос на валидацию в DeepSeekService
-    final validationResponse = await _deepSeekService.validateRequest(question);
+    // Отправляем весь контекст на валидацию в DeepSeekService
+    final validationResponse = await _deepSeekService.validateRequest(
+      questionContext,
+    );
 
     print('Получен ответ валидации: $validationResponse');
 
@@ -287,10 +307,13 @@ class ChatCubit extends HydratedCubit<ChatState> {
           isButtonAvailable: true,
           isLoading: false,
           loadingMessageIndex: -1,
+          // Очищаем контекст текущего вопроса, так как он стал валидным
+          currentQuestionContext: const [],
         ),
       );
     } else if (validationResponse.status == 'invalid') {
       // Если запрос не валидный, показываем сообщение с причиной
+      // НЕ очищаем currentQuestionContext - пользователь может добавить уточнение
       final errorMessage = MessageEntity(
         text:
             validationResponse.reasonMessage.isNotEmpty
@@ -313,6 +336,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
           loadingMessageIndex: -1,
           // Не показываем кнопку для встряхивания
           isButtonAvailable: false,
+          // НЕ очищаем currentQuestionContext - оставляем для дальнейших уточнений
         ),
       );
     } else {
@@ -336,6 +360,8 @@ class ChatCubit extends HydratedCubit<ChatState> {
           isLoading: false,
           loadingMessageIndex: -1,
           isButtonAvailable: false,
+          // В случае ошибки очищаем контекст, чтобы пользователь начал заново
+          currentQuestionContext: const [],
         ),
       );
     }
@@ -513,6 +539,8 @@ class ChatCubit extends HydratedCubit<ChatState> {
           isLoading: false,
           loadingMessageIndex: -1,
           lastHexagramContext: hexagramContext, // Сохраняем контекст
+          currentQuestionContext:
+              const [], // Очищаем контекст текущего вопроса, так как гадание завершено
         ),
       );
 
@@ -731,6 +759,17 @@ class ChatCubit extends HydratedCubit<ChatState> {
         isButtonAvailable: false,
         isLoading: false,
         loadingMessageIndex: -1,
+        currentQuestionContext: const [], // Очищаем контекст текущего вопроса
+      ),
+    );
+  }
+
+  void startNewQuestion() {
+    // Очищаем контекст текущего вопроса и контекст последнего гадания
+    emit(
+      state.copyWith(
+        currentQuestionContext: const [],
+        isButtonAvailable: false,
       ),
     );
   }

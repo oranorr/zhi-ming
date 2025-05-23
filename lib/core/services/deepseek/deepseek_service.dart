@@ -234,11 +234,39 @@ class DeepSeekService {
   }
 
   /// Проверяет адекватность запроса пользователя и возвращает результат проверки
-  Future<RequestValidationResponse> validateRequest(String request) async {
+  Future<RequestValidationResponse> validateRequest(request) async {
     try {
+      // Обрабатываем входной параметр - может быть строкой или списком строк
+      String requestText;
+      if (request is String) {
+        requestText = request;
+      } else if (request is List<String>) {
+        // Объединяем контекст в один текст
+        if (request.isEmpty) {
+          return RequestValidationResponse.error('Пустой контекст вопроса');
+        }
+
+        // Если в контексте только одно сообщение, используем его
+        if (request.length == 1) {
+          requestText = request.first;
+        } else {
+          // Если несколько сообщений, объединяем их с контекстом
+          requestText = 'Пользователь постепенно формулирует вопрос:\n\n';
+          for (int i = 0; i < request.length; i++) {
+            requestText += '${i + 1}. ${request[i]}\n';
+          }
+          requestText +=
+              '\nОцени общий смысл всех сообщений как единый вопрос для гадания.';
+        }
+      } else {
+        return RequestValidationResponse.error(
+          'Неверный тип данных для валидации',
+        );
+      }
+
       final response = await sendMessage(
         agentType: AgentType.requestValidator,
-        message: request,
+        message: requestText,
       );
 
       debugPrint('Получен сырой ответ от валидатора: $response');
@@ -264,7 +292,6 @@ class DeepSeekService {
             cleanedResponse.toLowerCase().contains('не подходит') ||
             cleanedResponse.toLowerCase().contains('некорректный') ||
             cleanedResponse.toLowerCase().contains('ошибка')) {
-          // Используем простой подход к извлечению причины
           String reason = cleanedResponse;
           // Пытаемся убрать техническую информацию
           if (reason.contains('reason')) {

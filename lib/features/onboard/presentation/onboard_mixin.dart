@@ -32,9 +32,15 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
   String dedMessage = '嗨！怎么称呼你呀？'; // Начальное сообщение от деда
   MessageEntity? userMessage;
   bool boolShowDatePicker = false;
-  DateTime selectedDate = DateTime.now();
+  DateTime selectedDate = DateTime(1990);
   bool birthdateSelected =
       false; // Флаг для отслеживания, выбрана ли уже дата рождения
+
+  // Состояние для выбора времени рождения
+  bool boolShowTimePicker = false;
+  TimeOfDay selectedTime = const TimeOfDay(hour: 12, minute: 0);
+  bool birthtimeSelected =
+      false; // Флаг для отслеживания, выбрано ли время рождения
 
   // Состояние для интересов
   final List<Interest> selectedInterests = [];
@@ -120,13 +126,15 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
 
   /// Метод для сохранения выбранной даты
   void saveBirthDate() {
-    // Сохраняем дату в кубит, но не переходим на главный экран
+    // Сохраняем дату в кубит, но переходим к выбору времени
     cubit.emit(cubit.state.copyWith(birthDate: selectedDate));
 
-    // Меняем состояние экрана: скрываем датапикер и показываем новое сообщение деда
+    // Меняем состояние экрана: скрываем датапикер и показываем выбор времени
     setState(() {
       boolShowDatePicker = false;
-      dedMessage = '谢谢！那你现在最关心的是什么呢？';
+      boolShowTimePicker = true;
+      dedMessage =
+          '很好！现在请选择你的出生时间。'; // "Отлично! Теперь выберите время рождения."
       userMessage = null; // Очищаем сообщение пользователя
       birthdateSelected = true; // Устанавливаем флаг, что дата рождения выбрана
     });
@@ -136,6 +144,42 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
   void onDateChanged(DateTime date) {
     setState(() {
       selectedDate = date;
+    });
+  }
+
+  /// Метод для сохранения выбранного времени
+  void saveBirthTime() {
+    // Сохраняем время в кубит
+    cubit.emit(cubit.state.copyWith(birthTime: selectedTime));
+
+    // Меняем состояние экрана: скрываем выбор времени и переходим к интересам
+    setState(() {
+      boolShowTimePicker = false;
+      dedMessage =
+          '谢谢！那你现在最关心的是什么呢？'; // "Спасибо! Что вас сейчас больше всего интересует?"
+      userMessage = null; // Очищаем сообщение пользователя
+      birthtimeSelected =
+          true; // Устанавливаем флаг, что время рождения выбрано
+    });
+  }
+
+  /// Метод для пропуска выбора времени рождения
+  void skipBirthTime() {
+    // Не сохраняем время в кубит, переходим к интересам
+    setState(() {
+      boolShowTimePicker = false;
+      dedMessage =
+          '谢谢！那你现在最关心的是什么呢？'; // "Спасибо! Что вас сейчас больше всего интересует?"
+      userMessage = null; // Очищаем сообщение пользователя
+      birthtimeSelected =
+          true; // Устанавливаем флаг, что время рождения выбрано (пропущено)
+    });
+  }
+
+  /// Обработчик изменения выбранного времени
+  void onTimeChanged(TimeOfDay time) {
+    setState(() {
+      selectedTime = time;
     });
   }
 
@@ -166,6 +210,12 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
         'interests':
             selectedInterests.map((interest) => interest.name).toList(),
       };
+
+      // Добавляем время рождения только если оно было выбрано (не пропущено)
+      if (cubit.state.birthTime != null) {
+        userData['birthtime'] =
+            '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
+      }
 
       // Отправляем данные в DeepSeek для анализа
       final response = await _deepSeekService.sendMessage(

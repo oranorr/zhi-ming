@@ -16,13 +16,13 @@ abstract class ZColors {
   static const LinearGradient chatGradient = LinearGradient(
     begin: AlignmentDirectional(0.3, -0.8),
     end: AlignmentDirectional(-0.3, 0.8),
-    stops: [0.0, 0.25, 0.5, 0.75, 1.0],
+    stops: [0.0, 0.2, 0.5, 0.8, 1.0],
     colors: [
-      Color.fromRGBO(255, 255, 255, 0), // #FFFFFF 0%
-      Color.fromRGBO(113, 78, 255, 0.08), // #714EFF very pale
-      Color.fromRGBO(188, 115, 243, 0.12), // #BC73F3 main pale lavender
-      Color.fromRGBO(89, 144, 255, 0.08), // #5990FF very pale blue
-      Color.fromRGBO(255, 255, 255, 0), // #FFFFFF 0%
+      Color.fromRGBO(240, 241, 242, 1), // F0F1F2 base color
+      Color.fromRGBO(113, 78, 255, 0.04), // 714EFF very soft
+      Color.fromRGBO(188, 115, 243, 0.08), // BC73F3 gentle center
+      Color.fromRGBO(89, 144, 255, 0.05), // 5990FF very soft
+      Color.fromRGBO(240, 241, 242, 1), // F0F1F2 base color
     ],
   );
   static const Color black = Colors.black;
@@ -38,4 +38,5 @@ abstract class ZColors {
   static const Color yellowLight = Color(0xffEDFFCC);
   static const Color white = Color(0xffFFFDF9);
   static const Color gray = Color(0xffE6E5E8);
+  static const Color grayDark = Color(0xff929292);
 }

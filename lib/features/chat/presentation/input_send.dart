@@ -109,7 +109,7 @@ class TextInputWidget extends StatelessWidget {
         contentPadding: EdgeInsets.zero,
         border: InputBorder.none,
         hintText: '消息',
-        hintStyle: context.styles.medium.copyWith(color: ZColors.purpleLight),
+        hintStyle: context.styles.mRegular.copyWith(color: ZColors.purpleLight),
       ),
     );
   }

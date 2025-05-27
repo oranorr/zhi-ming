@@ -84,7 +84,7 @@ class _InterestChipState extends State<InterestChip> {
         }
       },
       child: Container(
-        height: 36.h,
+        height: 45.h,
         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
         decoration: BoxDecoration(
           color: widget.interest.color,
@@ -94,30 +94,37 @@ class _InterestChipState extends State<InterestChip> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            SizedBox(
-              width: 24.w,
-              height: 24.h,
+            SizedBox.square(
+              dimension: 24.r,
               child: Image.asset(widget.interest.asset),
             ),
             // SizedBox(width: 5.w),
-            Text(widget.interest.name, style: context.styles.mediumDemilight),
             SizedBox(width: 10.w),
-            Container(
-              width: 20,
-              height: 20,
+            Text(
+              widget.interest.name,
+              style: context.styles.xsDemilight.copyWith(height: 1),
+            ),
+            SizedBox(width: 10.w),
+            SizedBox.square(
+              dimension: 20.r,
+              child: DecoratedBox(
+                // width: 20.w,
+                // height: 20.h,
+                decoration: BoxDecoration(
+                  color: widget.isSelected ? ZColors.blueDark : ZColors.white,
 
-              decoration: BoxDecoration(
-                color: widget.isSelected ? ZColors.blueDark : ZColors.white,
-
-                borderRadius: BorderRadius.circular(6),
-                border:
-                    widget.isSelected ? null : Border.all(color: ZColors.gray),
-                // shape:
+                  borderRadius: BorderRadius.circular(6),
+                  border:
+                      widget.isSelected
+                          ? null
+                          : Border.all(color: ZColors.gray),
+                  // shape:
+                ),
+                child:
+                    widget.isSelected
+                        ? Icon(Icons.check, size: 20.r, color: Colors.white)
+                        : null,
               ),
-              child:
-                  widget.isSelected
-                      ? const Icon(Icons.check, size: 20, color: Colors.white)
-                      : null,
             ),
           ],
         ),

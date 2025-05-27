@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/material.dart';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 
@@ -12,6 +13,7 @@ class OnboardState extends Equatable {
     this.currentInput = '',
     this.currentQuestionIndex = 0,
     this.birthDate,
+    this.birthTime,
     this.isCompleted = false,
     this.isLoading = false,
   });
@@ -24,6 +26,7 @@ class OnboardState extends Equatable {
   final String currentInput;
   final int currentQuestionIndex;
   final DateTime? birthDate;
+  final TimeOfDay? birthTime;
   final bool isCompleted;
   final bool isLoading;
 
@@ -33,6 +36,7 @@ class OnboardState extends Equatable {
     String? currentInput,
     int? currentQuestionIndex,
     DateTime? birthDate,
+    TimeOfDay? birthTime,
     bool? isCompleted,
     bool? isLoading,
   }) {
@@ -42,6 +46,7 @@ class OnboardState extends Equatable {
       currentInput: currentInput ?? this.currentInput,
       currentQuestionIndex: currentQuestionIndex ?? this.currentQuestionIndex,
       birthDate: birthDate ?? this.birthDate,
+      birthTime: birthTime ?? this.birthTime,
       isCompleted: isCompleted ?? this.isCompleted,
       isLoading: isLoading ?? this.isLoading,
     );
@@ -56,6 +61,7 @@ class OnboardState extends Equatable {
     currentInput,
     currentQuestionIndex,
     birthDate,
+    birthTime,
     isCompleted,
     isLoading,
   ];

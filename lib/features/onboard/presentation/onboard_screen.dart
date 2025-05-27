@@ -11,6 +11,7 @@ import 'package:zhi_ming/features/onboard/domain/onboard_state.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_mixin.dart';
 import 'package:zhi_ming/features/onboard/presentation/z_date_picker.dart';
+import 'package:zhi_ming/features/onboard/presentation/z_time_picker.dart';
 
 class OnboardScreen extends StatefulWidget {
   const OnboardScreen({super.key});
@@ -80,7 +81,7 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
       );
     }
 
-    if (birthdateSelected) {
+    if (birthdateSelected && !boolShowTimePicker) {
       // Горизонтальное расположение (маленький дед + сообщение)
       return Padding(
         padding: EdgeInsets.symmetric(vertical: 16.h),
@@ -93,7 +94,7 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
               fit: BoxFit.cover,
             ),
             SizedBox(width: 16.w),
-            _DedMessage(message: dedMessage),
+            Expanded(child: _DedMessage(message: dedMessage)),
           ],
         ),
       );
@@ -138,12 +139,23 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
         );
       }
 
-      // Иначе показываем селектор интересов
-      return _InterestsSelector(
-        interests: OnboardRepo.interests,
-        selectedInterests: selectedInterests,
-        onInterestSelected: onInterestSelected,
-        onSave: saveInterests,
+      // Если время рождения выбрано, показываем селектор интересов
+      if (birthtimeSelected) {
+        return _InterestsSelector(
+          interests: OnboardRepo.interests,
+          selectedInterests: selectedInterests,
+          onInterestSelected: onInterestSelected,
+          onSave: saveInterests,
+        );
+      }
+    }
+
+    if (boolShowTimePicker) {
+      return _TimePickerWidget(
+        selectedTime: selectedTime,
+        onTimeChanged: onTimeChanged,
+        onSave: saveBirthTime,
+        onSkip: skipBirthTime,
       );
     }
 
@@ -182,10 +194,10 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
             child: Padding(
               padding: EdgeInsets.only(right: 8.w),
               child: Zbutton(
-                action: navigateToHome,
+                action: navigateToChat,
                 isLoading: false,
                 isActive: true,
-                text: '首页', // "Домой"
+                text: '继续占卜', // "Продолжить гадание"
                 color: const Color(0xFF7C7CFF),
                 textColor: Colors.white,
               ),
@@ -197,11 +209,11 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
             child: Padding(
               padding: EdgeInsets.only(left: 8.w),
               child: Zbutton(
-                action: navigateToChat,
+                action: navigateToHome,
                 isLoading: false,
                 isActive: true,
-                text: '聊天', // "Чат"
-                color: const Color(0xFF7C7CFF),
+                text: '稍后再试', // "Попробовать позже"
+                color: const Color(0xffD38DEC),
                 textColor: Colors.white,
               ),
             ),
@@ -211,7 +223,10 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
     }
 
     // Стандартная логика отображения поля ввода
-    if (!boolShowDatePicker && !birthdateSelected && !isLoading) {
+    if (!boolShowDatePicker &&
+        !boolShowTimePicker &&
+        !birthdateSelected &&
+        !isLoading) {
       return InputSendWidget(
         onSend: sendMessage,
         onTextChanged: (text) => cubit.updateInput(text),
@@ -234,7 +249,7 @@ class _DedMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       message,
-      style: context.styles.medium,
+      style: context.styles.mRegular.copyWith(height: 1.4),
       textAlign: TextAlign.center,
     );
   }
@@ -272,6 +287,45 @@ class _DatePickerWidget extends StatelessWidget {
   }
 }
 
+// Виджет выбора времени
+class _TimePickerWidget extends StatelessWidget {
+  const _TimePickerWidget({
+    required this.selectedTime,
+    required this.onTimeChanged,
+    required this.onSave,
+    required this.onSkip,
+  });
+
+  final TimeOfDay selectedTime;
+  final Function(TimeOfDay) onTimeChanged;
+  final VoidCallback onSave;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Spacer(),
+        ZTimePicker(onTimeChanged: onTimeChanged, initialTime: selectedTime),
+        const Spacer(),
+        Zbutton(
+          action: onSave,
+          isLoading: false,
+          isActive: true,
+          text: '保存',
+          color: const Color(0xFF7C7CFF),
+          textColor: Colors.white,
+        ),
+        SizedBox(height: 16.h),
+        TextButton(
+          onPressed: onSkip,
+          child: Text('跳过', style: context.styles.lRegular.copyWith()),
+        ),
+      ],
+    );
+  }
+}
+
 // Виджет выбора интересов
 class _InterestsSelector extends StatelessWidget {
   const _InterestsSelector({
@@ -291,18 +345,20 @@ class _InterestsSelector extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: Wrap(
-            spacing: 12.w,
-            runSpacing: 10.h,
-            children: [
-              for (final interest in interests)
-                InterestChip(
-                  interest: interest,
-                  isSelected: selectedInterests.contains(interest),
-                  onSelectionChanged: onInterestSelected,
-                  key: ValueKey(interest.name),
-                ),
-            ],
+          child: SizedBox.expand(
+            child: Wrap(
+              spacing: 12.w,
+              runSpacing: 10.h,
+              children: [
+                for (final interest in interests)
+                  InterestChip(
+                    interest: interest,
+                    isSelected: selectedInterests.contains(interest),
+                    onSelectionChanged: onInterestSelected,
+                    key: ValueKey(interest.name),
+                  ),
+              ],
+            ),
           ),
         ),
         SizedBox(height: 20.h),

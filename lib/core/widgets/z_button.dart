@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/core/theme/theme_colors.dart';
+import 'package:zhi_ming/core/theme/z_text_styles.dart';
 
 class Zbutton extends StatefulWidget {
   final VoidCallback action;
@@ -13,11 +14,11 @@ class Zbutton extends StatefulWidget {
   final Color? color;
   final Color? textColor;
   const Zbutton({
-    super.key,
     required this.action,
     required this.isLoading,
     required this.isActive,
     required this.text,
+    super.key,
     this.color,
     this.textColor,
   });
@@ -41,7 +42,10 @@ class _ZbuttonState extends State<Zbutton> {
         child: Center(
           child: Text(
             widget.text,
-            style: context.styles.regular.copyWith(color: widget.textColor),
+            style: context.styles.lRegular.copyWith(
+              color: widget.textColor,
+              fontWeight: AppFontWeight.medium,
+            ),
           ),
         ),
       ),

@@ -1,6 +1,3 @@
-// final _routerConfig = appNavigationService.config;
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -97,10 +94,11 @@ class _AppState extends State<App> {
             theme: AppTheme.light(),
             themeMode: ThemeMode.light,
             home:
+                // const Paywall(),
                 _isInitializing
                     ? const _LoadingScreen() // Экран загрузки пока проверяем статус
-                    : !kDebugMode
-                    // : _onboardingCompleted
+                    // : !kDebugMode
+                    : _onboardingCompleted
                     ? const HomePage() // Если онбординг пройден, показываем главную страницу
                     : const OnboardScreen(), // Иначе показываем экран онбординга
             // routerConfig: _routerConfig,

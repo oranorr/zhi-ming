@@ -1,12 +1,13 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
-import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
-import 'dart:developer' as developer;
+import 'package:zhi_ming/core/theme/theme_colors.dart';
 
 class IChingShakePopup extends StatefulWidget {
   const IChingShakePopup({
@@ -187,30 +188,49 @@ class _IChingShakePopupState extends State<IChingShakePopup>
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.symmetric(horizontal: 20.w),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: 20.w,
+        vertical: screenHeight * 0.1, // Адаптивные вертикальные отступы
+      ),
       child: Material(
         type: MaterialType.transparency,
-        child: _buildDialogContainer(context),
+        child: _buildDialogContainer(context, screenHeight, screenWidth),
       ),
     );
   }
 
-  Widget _buildDialogContainer(BuildContext context) {
+  Widget _buildDialogContainer(
+    BuildContext context,
+    double screenHeight,
+    double screenWidth,
+  ) {
+    // Адаптивные размеры с ограничениями
+    final dialogWidth = (screenWidth * 0.85).clamp(280.0, 350.0);
+    // final dialogWidth = (screenWidth * 0.85).clamp(280.0, 350.0);
+    // final dialogHeight = 300.h;
+    final dialogHeight = (screenHeight * 0.4).clamp(300.0, 400.0);
+
     return Container(
-      width: 330.w,
-      height: 330.h,
+      width: dialogWidth,
+      height: dialogHeight,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.amber.shade50, Colors.amber.shade100],
+        gradient: const LinearGradient(
+          colors: [Color(0xffEEEFFF), Color(0xffEDFFCC)],
         ),
         borderRadius: BorderRadius.circular(20),
       ),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: _canDismiss ? () => _finishAndGenerateLine() : null,
-        child: Center(child: _buildAnimatedContent()),
+        child: Padding(
+          padding: EdgeInsets.all(16.w),
+          child: _buildAnimatedContent(),
+        ),
       ),
     );
   }
@@ -225,22 +245,28 @@ class _IChingShakePopupState extends State<IChingShakePopup>
             opacity: _fadeAnimation.value,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                CoinDisplayArea(
-                  isInitial: isInitial,
-                  coinsState: _coinsState,
-                  onTap: _handleTap,
+                Flexible(
+                  flex: 3,
+                  child: CoinDisplayArea(
+                    isInitial: isInitial,
+                    coinsState: _coinsState,
+                    onTap: _handleTap,
+                  ),
                 ),
                 SizedBox(height: 24.h),
-                ShakeInstructions(
-                  isInitial: isInitial,
-                  currentLine: widget.currentLine,
-                  totalLines: widget.totalLines,
-                  currentShakeCount: widget.shakeService.currentShakeCount,
-                  maxShakeCount: widget.shakeService.maxShakeCount,
+                Flexible(
+                  child: ShakeInstructions(
+                    isInitial: isInitial,
+                    currentLine: widget.currentLine,
+                    totalLines: widget.totalLines,
+                    currentShakeCount: widget.shakeService.currentShakeCount,
+                    maxShakeCount: widget.shakeService.maxShakeCount,
+                  ),
                 ),
                 if (!isInitial) ...[
-                  SizedBox(height: 24.h),
+                  SizedBox(height: 16.h),
                   ShakeProgressIndicator(progress: _progress),
                 ],
               ],
@@ -272,8 +298,12 @@ class CoinDisplayArea extends StatelessWidget {
         duration: const Duration(milliseconds: 500),
         child: Container(
           key: ValueKey<bool>(isInitial),
-          width: 251.w,
-          height: 200.h,
+          constraints: BoxConstraints(
+            minWidth: 200.w,
+            maxWidth: 280.w,
+            minHeight: 174.h,
+            maxHeight: 180.h,
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             color: !isInitial ? Colors.white.withOpacity(0.1) : null,
@@ -281,7 +311,15 @@ class CoinDisplayArea extends StatelessWidget {
           child: Stack(
             children: [
               if (isInitial)
-                Center(child: Image.asset('assets/shake.png'))
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: 251.w,
+                      maxHeight: 174.h,
+                    ),
+                    child: Image.asset('assets/shake.png'),
+                  ),
+                )
               else
                 CoinArrangement(coinsState: coinsState),
               Positioned.fill(
@@ -308,6 +346,9 @@ class CoinArrangement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final coinSpacing = screenWidth < 350 ? 20.0 : 30.0;
+
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -316,10 +357,11 @@ class CoinArrangement extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               CoinImage(isHeads: coinsState[0]),
-              const SizedBox(width: 40),
+              SizedBox(width: coinSpacing),
               CoinImage(isHeads: coinsState[1]),
             ],
           ),
+          SizedBox(height: 8.h),
           CoinImage(isHeads: coinsState[2]),
         ],
       ),
@@ -334,6 +376,9 @@ class CoinImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final coinSize = screenWidth < 350 ? 60.0 : 80.0;
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 500),
       transitionBuilder: (Widget child, Animation<double> animation) {
@@ -363,8 +408,8 @@ class CoinImage extends StatelessWidget {
       child: Image.asset(
         isHeads ? 'assets/heads.png' : 'assets/tails.png',
         key: ValueKey<bool>(isHeads),
-        width: 100,
-        height: 100,
+        width: coinSize,
+        height: coinSize,
       ),
     );
   }
@@ -388,15 +433,20 @@ class ShakeInstructions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: Text(
-        key: ValueKey<bool>(isInitial),
-        isInitial
-            ? 'Встряхните телефон или нажмите для броска монет\nЛиния $currentLine из $totalLines'
-            : 'Продолжайте встряхивать телефон или нажимайте на монеты\n$currentShakeCount/$maxShakeCount действий',
-        style: context.styles.medium,
-        textAlign: TextAlign.center,
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8.w),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        child: Text(
+          key: ValueKey<bool>(isInitial),
+          isInitial ? '摇动手机以投掷硬币。\n总共需要进行6次投掷。' : '摇动以进行第二次投掷或点击硬币',
+          // ? 'Встряхните телефон или нажмите для броска монет\nЛиния $currentLine из $totalLines'
+          // : 'Продолжайте встряхивать телефон или нажимайте на монеты\n$currentShakeCount/$maxShakeCount действий',
+          style: context.styles.mDemilight,
+          textAlign: TextAlign.center,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
@@ -409,13 +459,16 @@ class ShakeProgressIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final progressWidth = (screenWidth * 0.5).clamp(120.0, 200.0);
+
     return SizedBox(
-      width: 175.w,
+      width: progressWidth,
       child: LinearProgressIndicator(
         borderRadius: BorderRadius.circular(100),
         value: progress,
-        color: Colors.amber.shade700,
-        backgroundColor: Colors.amber.shade200,
+        color: ZColors.blueDark,
+        backgroundColor: ZColors.white,
       ),
     );
   }

@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:json_annotation/json_annotation.dart';
+import 'package:zhi_ming/core/services/adapty/adapty_service.dart';
+import 'package:zhi_ming/core/services/adapty/adapty_service_impl.dart';
 import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
 import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
@@ -24,6 +26,9 @@ class ChatState extends Equatable {
     this.lastHexagramContext, // Добавляем контекст последнего гадания
     this.currentQuestionContext =
         const [], // Контекст текущего формирующегося вопроса
+    this.hasActiveSubscription = false, // Статус подписки
+    this.remainingFreeRequests = 0, // Количество оставшихся бесплатных запросов
+    this.shouldNavigateToPaywall = false, // Флаг для навигации на paywall
   });
   factory ChatState.fromJson(Map<String, dynamic> json) =>
       _$ChatStateFromJson(json);
@@ -36,6 +41,9 @@ class ChatState extends Equatable {
   final HexagramContext? lastHexagramContext; // Контекст последнего гадания
   final List<String>
   currentQuestionContext; // Накопленный контекст текущего вопроса
+  final bool hasActiveSubscription; // Статус подписки
+  final int remainingFreeRequests; // Количество оставшихся бесплатных запросов
+  final bool shouldNavigateToPaywall; // Флаг для навигации на paywall
 
   ChatState copyWith({
     bool? isButtonAvailable,
@@ -46,6 +54,9 @@ class ChatState extends Equatable {
     int? loadingMessageIndex,
     HexagramContext? lastHexagramContext,
     List<String>? currentQuestionContext,
+    bool? hasActiveSubscription,
+    int? remainingFreeRequests,
+    bool? shouldNavigateToPaywall,
   }) {
     return ChatState(
       isButtonAvailable: isButtonAvailable ?? this.isButtonAvailable,
@@ -57,6 +68,12 @@ class ChatState extends Equatable {
       lastHexagramContext: lastHexagramContext ?? this.lastHexagramContext,
       currentQuestionContext:
           currentQuestionContext ?? this.currentQuestionContext,
+      hasActiveSubscription:
+          hasActiveSubscription ?? this.hasActiveSubscription,
+      remainingFreeRequests:
+          remainingFreeRequests ?? this.remainingFreeRequests,
+      shouldNavigateToPaywall:
+          shouldNavigateToPaywall ?? this.shouldNavigateToPaywall,
     );
   }
 
@@ -72,6 +89,9 @@ class ChatState extends Equatable {
     loadingMessageIndex,
     lastHexagramContext,
     currentQuestionContext,
+    hasActiveSubscription,
+    remainingFreeRequests,
+    shouldNavigateToPaywall,
   ];
 }
 
@@ -99,9 +119,31 @@ class HexagramContext {
 class ChatCubit extends HydratedCubit<ChatState> {
   ChatCubit() : super(const ChatState()) {
     _deepSeekService = DeepSeekService();
+    _adaptyService = AdaptyServiceImpl();
+    _initializeServices();
   }
 
   late final DeepSeekService _deepSeekService;
+  late final AdaptyService _adaptyService;
+
+  /// Инициализация сервисов и загрузка данных о подписке
+  Future<void> _initializeServices() async {
+    await _adaptyService.init();
+    await _updateSubscriptionStatus();
+  }
+
+  /// Обновление статуса подписки и счетчика запросов
+  Future<void> _updateSubscriptionStatus() async {
+    final hasSubscription = await _adaptyService.hasActiveSubscription();
+    final remainingRequests = await _adaptyService.getRemainingFreeRequests();
+
+    emit(
+      state.copyWith(
+        hasActiveSubscription: hasSubscription,
+        remainingFreeRequests: remainingRequests,
+      ),
+    );
+  }
 
   void showInitialMessage() {
     final initialBotMessage = MessageEntity(
@@ -170,6 +212,37 @@ class ChatCubit extends HydratedCubit<ChatState> {
   }
 
   Future<void> handleFollowUpQuestion(String question) async {
+    // Проверяем, может ли пользователь сделать запрос
+    final canMakeRequest = await _adaptyService.canMakeRequest();
+
+    if (!canMakeRequest) {
+      // Если пользователь не может сделать запрос, показываем сообщение и переходим на paywall
+      final limitMessage = MessageEntity(
+        text:
+            'Вы исчерпали все бесплатные запросы. Для продолжения необходимо оформить подписку.',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final updatedMessages = List<MessageEntity>.from(state.messages)
+        ..insert(0, limitMessage);
+
+      emit(
+        state.copyWith(
+          messages: updatedMessages,
+          isLoading: false,
+          loadingMessageIndex: -1,
+          isButtonAvailable: false,
+        ),
+      );
+
+      // Переходим на paywall через небольшую задержку
+      Future.delayed(const Duration(seconds: 1), () {
+        navigateToPaywall();
+      });
+      return;
+    }
+
     // Создаем сообщение-индикатор загрузки
     final loadingMessage = MessageEntity(
       text: '',
@@ -210,6 +283,10 @@ class ChatCubit extends HydratedCubit<ChatState> {
         previousInterpretation: context.interpretation,
         conversationHistory: conversationHistory,
       );
+
+      // Уменьшаем счетчик бесплатных запросов после успешного ответа
+      await _adaptyService.decrementFreeRequests();
+      await _updateSubscriptionStatus();
 
       // Обновляем сообщение с ответом
       final responseMessage = MessageEntity(
@@ -258,6 +335,37 @@ class ChatCubit extends HydratedCubit<ChatState> {
   }
 
   Future<void> validateUserRequest(List<String> questionContext) async {
+    // Проверяем, может ли пользователь сделать запрос
+    final canMakeRequest = await _adaptyService.canMakeRequest();
+
+    if (!canMakeRequest) {
+      // Если пользователь не может сделать запрос, показываем сообщение и переходим на paywall
+      final limitMessage = MessageEntity(
+        text:
+            'Вы исчерпали все бесплатные запросы. Для продолжения необходимо оформить подписку.',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final updatedMessages = List<MessageEntity>.from(state.messages)
+        ..insert(0, limitMessage);
+
+      emit(
+        state.copyWith(
+          messages: updatedMessages,
+          isLoading: false,
+          loadingMessageIndex: -1,
+          isButtonAvailable: false,
+        ),
+      );
+
+      // Переходим на paywall через небольшую задержку
+      Future.delayed(const Duration(seconds: 1), () {
+        navigateToPaywall();
+      });
+      return;
+    }
+
     // Создаем сообщение-индикатор загрузки
     final loadingMessage = MessageEntity(
       text: '',
@@ -367,9 +475,78 @@ class ChatCubit extends HydratedCubit<ChatState> {
     }
   }
 
-  void processAfterShaking(ShakerServiceRepo shakerService) {
+  /// Навигация на экран paywall
+  void navigateToPaywall() {
+    debugPrint('=== ПЕРЕХОД НА PAYWALL - ОЧИСТКА СОСТОЯНИЯ ===');
+
+    // Очищаем состояние чата перед переходом на paywall
+    clearMessages();
+
+    // Устанавливаем флаг для навигации на paywall с дополнительной очисткой
+    emit(
+      state.copyWith(
+        isLoading: false,
+        isButtonAvailable: false,
+        shouldNavigateToPaywall: true,
+        currentQuestionContext:
+            const [], // Дополнительно очищаем контекст вопроса
+      ),
+    );
+
+    debugPrint('=== СОСТОЯНИЕ ОЧИЩЕНО ПЕРЕД PAYWALL ===');
+  }
+
+  /// Сброс флага навигации на paywall
+  void resetPaywallNavigation() {
+    emit(state.copyWith(shouldNavigateToPaywall: false));
+  }
+
+  Future<void> processAfterShaking(ShakerServiceRepo shakerService) async {
     // Явно скрываем клавиатуру
     SystemChannels.textInput.invokeMethod('TextInput.hide');
+
+    // ПРОВЕРЯЕМ ПОДПИСКУ И БЕСПЛАТНЫЕ ЗАПРОСЫ ПЕРЕД НАЧАЛОМ ОБРАБОТКИ
+    debugPrint('=== ПРОВЕРКА ПОДПИСКИ В processAfterShaking ===');
+    final hasSubscription = await _adaptyService.hasActiveSubscription();
+    final remainingRequests = await _adaptyService.getRemainingFreeRequests();
+    debugPrint('Активная подписка: $hasSubscription');
+    debugPrint('Оставшиеся бесплатные запросы: $remainingRequests');
+
+    final canMakeRequest = await _adaptyService.canMakeRequest();
+    debugPrint('Может ли сделать запрос: $canMakeRequest');
+
+    if (!canMakeRequest) {
+      debugPrint(
+        'БЛОКИРУЕМ ЗАПРОС - нет подписки и закончились бесплатные запросы',
+      );
+      // Если пользователь не может сделать запрос, показываем сообщение и переходим на paywall
+      final limitMessage = MessageEntity(
+        text:
+            'Вы исчерпали все бесплатные запросы. Для продолжения необходимо оформить подписку.',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final updatedMessages = List<MessageEntity>.from(state.messages)
+        ..insert(0, limitMessage);
+
+      emit(
+        state.copyWith(
+          messages: updatedMessages,
+          isLoading: false,
+          loadingMessageIndex: -1,
+          isButtonAvailable: false,
+        ),
+      );
+
+      // Переходим на paywall через небольшую задержку
+      Future.delayed(const Duration(seconds: 1), () {
+        navigateToPaywall();
+      });
+      return;
+    }
+
+    debugPrint('РАЗРЕШАЕМ ЗАПРОС - продолжаем обработку гексаграмм');
 
     // Создаем пустое сообщение от бота, которое будет показывать индикатор загрузки
     final loadingMessage = MessageEntity(
@@ -394,6 +571,10 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
     // Задержка перед финальным ответом
     Future.delayed(const Duration(seconds: 2), () async {
+      // Уменьшаем счетчик бесплатных запросов после успешного гадания
+      await _adaptyService.decrementFreeRequests();
+      await _updateSubscriptionStatus();
+
       // Получаем значения линий (суммы бросков) из ShakerService
       final List<int> lineValues = shakerService.getLineValues();
 
@@ -790,8 +971,8 @@ class ChatCubit extends HydratedCubit<ChatState> {
     // Вызываем очистку в родительском классе
     await super.clear();
 
-    // Сбрасываем состояние еще раз для надежности
-    emit(const ChatState());
+    // Обновляем статус подписки после очистки
+    await _updateSubscriptionStatus();
 
     debugPrint('==== Состояние сброшено до начального ====');
   }

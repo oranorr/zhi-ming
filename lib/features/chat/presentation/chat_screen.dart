@@ -10,6 +10,7 @@ import 'package:zhi_ming/core/services/shake_service/shake_service_impl.dart';
 import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/widgets/z_button.dart';
 import 'package:zhi_ming/core/widgets/z_scaffold.dart';
+import 'package:zhi_ming/features/adapty/presentation/paywall.dart';
 import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/input_send.dart';
@@ -92,135 +93,152 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<ChatCubit, ChatState>(
-      builder: (context, state) {
-        return WillPopScope(
-          onWillPop: () async {
-            // Скрываем клавиатуру
-            _hideKeyboard();
+    return BlocListener<ChatCubit, ChatState>(
+      listener: (context, state) {
+        // Слушаем флаг навигации на paywall
+        if (state.shouldNavigateToPaywall) {
+          // Сбрасываем флаг
+          cubit.resetPaywallNavigation();
 
-            // Даем немного времени для закрытия клавиатуры
-            await Future.delayed(const Duration(milliseconds: 100));
+          // Переходим на paywall
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const Paywall()),
+            (route) => false,
+          );
+        }
+      },
+      child: BlocBuilder<ChatCubit, ChatState>(
+        builder: (context, state) {
+          return WillPopScope(
+            onWillPop: () async {
+              // Скрываем клавиатуру
+              _hideKeyboard();
 
-            // Полностью очищаем состояние кубита вместо просто очистки сообщений
-            await cubit.clear();
+              // Даем немного времени для закрытия клавиатуры
+              await Future.delayed(const Duration(milliseconds: 100));
 
-            return mounted;
-          },
-          child: ZScaffold(
-            isHome: false,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  SizedBox(height: 35.h),
-                  GestureDetector(
-                    onTap: () async {
-                      // Скрываем клавиатуру
-                      _hideKeyboard();
+              // Полностью очищаем состояние кубита вместо просто очистки сообщений
+              await cubit.clear();
 
-                      // Даем немного времени для закрытия клавиатуры
-                      await Future.delayed(const Duration(milliseconds: 100));
+              return mounted;
+            },
+            child: ZScaffold(
+              isHome: false,
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    SizedBox(height: 35.h),
+                    GestureDetector(
+                      onTap: () async {
+                        // Скрываем клавиатуру
+                        _hideKeyboard();
 
-                      // Полностью очищаем состояние кубита вместо просто очистки сообщений
-                      await cubit.clear();
+                        // Даем немного времени для закрытия клавиатуры
+                        await Future.delayed(const Duration(milliseconds: 100));
 
-                      if (widget.entrypoint is OnboardingEntrypointEntity) {
-                        await Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (context) => const HomePage(),
-                          ),
-                        );
-                      }
+                        // Полностью очищаем состояние кубита вместо просто очистки сообщений
+                        await cubit.clear();
 
-                      // Возвращаемся на предыдущий экран
-                      if (mounted) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    child: Row(
-                      children: [
-                        SvgPicture.asset('assets/arrow-left.svg'),
-                        SizedBox(width: 8.w),
-                        Text('首页', style: context.styles.h2),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      // Закрываем клавиатуру при тапе на список
-                      onTap: _hideKeyboard,
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        itemCount: state.messages.length,
-                        itemBuilder: (context, index) {
-                          final message =
-                              state.messages[state.messages.length - 1 - index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: MessageWidget(
-                              isMe: message.isMe,
-                              isLoading:
-                                  state.isLoading &&
-                                  index == state.messages.length - 1 &&
-                                  !message.isMe,
-                              text: message.text,
-                              hexagrams: message.hexagrams,
+                        if (widget.entrypoint is OnboardingEntrypointEntity) {
+                          await Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (context) => const HomePage(),
                             ),
                           );
-                        },
+                        }
+
+                        // Возвращаемся на предыдущий экран
+                        if (mounted) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                      child: Row(
+                        children: [
+                          SvgPicture.asset('assets/arrow-left.svg'),
+                          SizedBox(width: 8.w),
+                          Text('首页', style: context.styles.h2),
+                        ],
                       ),
                     ),
-                  ),
-                  SizedBox(height: 20.h),
-                  if (state.isButtonAvailable)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: Zbutton(
-                        action: () {
-                          showDialog(
-                            context: context,
-                            barrierColor: Colors.black54,
-                            builder: (context) {
-                              // Создаем один экземпляр сервиса для использования в обоих местах
-                              final shakerService = ShakerServiceImpl();
-                              return IChingShakePopup(
-                                shakeService: shakerService,
-                                onLineGenerated: (lineValue) {
-                                  // Если все 6 линий уже получены (всего нужно 6 бросков монет)
-                                  // каждый бросок состоит из 3 монет, но нам нужны только итоговые линии
-                                  if (shakerService.currentShakeCount >= 6) {
-                                    // Обрабатываем сгенерированную линию и передаем сервис
-                                    cubit.processAfterShaking(shakerService);
-                                  }
-                                },
-                                currentLine: 1,
-                                totalLines: 6,
-                              );
-                            },
-                          );
-                        },
-                        isLoading: false,
-                        isActive: true,
-                        text: '抛硬币',
-                        textColor: ZColors.white,
+                    Expanded(
+                      child: GestureDetector(
+                        // Закрываем клавиатуру при тапе на список
+                        onTap: _hideKeyboard,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          itemCount: state.messages.length,
+                          itemBuilder: (context, index) {
+                            final message =
+                                state.messages[state.messages.length -
+                                    1 -
+                                    index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: MessageWidget(
+                                isMe: message.isMe,
+                                isLoading:
+                                    state.isLoading &&
+                                    index == state.messages.length - 1 &&
+                                    !message.isMe,
+                                text: message.text,
+                                hexagrams: message.hexagrams,
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  InputSendWidget(
-                    onSend: () => cubit.sendMessage(),
-                    onTextChanged: (text) => cubit.updateInput(text),
-                    isSendAvailable: state.isSendAvailable,
-                    currentInput: state.currentInput,
-                    focusNode:
-                        _focusNode, // Передаем FocusNode в InputSendWidget
-                  ),
-                  SizedBox(height: 35.h),
-                ],
+                    SizedBox(height: 20.h),
+                    if (state.isButtonAvailable)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: Zbutton(
+                          action: () {
+                            showDialog(
+                              context: context,
+                              barrierColor: Colors.black54,
+                              builder: (context) {
+                                // Создаем один экземпляр сервиса для использования в обоих местах
+                                final shakerService = ShakerServiceImpl();
+                                return IChingShakePopup(
+                                  shakeService: shakerService,
+                                  onLineGenerated: (lineValue) {
+                                    // Если все 6 линий уже получены (всего нужно 6 бросков монет)
+                                    // каждый бросок состоит из 3 монет, но нам нужны только итоговые линии
+                                    if (shakerService.currentShakeCount >= 6) {
+                                      // Обрабатываем сгенерированную линию и передаем сервис
+                                      cubit.processAfterShaking(shakerService);
+                                    }
+                                  },
+                                  currentLine: 1,
+                                  totalLines: 6,
+                                );
+                              },
+                            );
+                          },
+                          isLoading: false,
+                          isActive: true,
+                          text: '抛硬币',
+                          textColor: ZColors.white,
+                        ),
+                      ),
+                    InputSendWidget(
+                      onSend: () => cubit.sendMessage(),
+                      onTextChanged: (text) => cubit.updateInput(text),
+                      isSendAvailable: state.isSendAvailable,
+                      currentInput: state.currentInput,
+                      focusNode:
+                          _focusNode, // Передаем FocusNode в InputSendWidget
+                    ),
+                    SizedBox(height: 35.h),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -249,19 +267,14 @@ class MessageWidget extends StatelessWidget {
             color: ZColors.yellowLight,
             borderRadius: BorderRadius.circular(20),
           ),
-          padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
-          child: Text(
-            text,
-            style: context.styles.medium,
-            softWrap: true,
-            textAlign: TextAlign.right,
-          ),
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+          child: Text(text, style: context.styles.mDemilight, softWrap: true),
         ),
       );
     } else {
       return AnimatedContainer(
         duration: const Duration(milliseconds: 300),
-
+        // color: Colors.amber,
         child: Row(
           crossAxisAlignment:
               isLoading ? CrossAxisAlignment.center : CrossAxisAlignment.start,
@@ -270,7 +283,7 @@ class MessageWidget extends StatelessWidget {
               dimension: 40.w,
               child: Image.asset('assets/ded.png'),
             ),
-            SizedBox(width: 4.w),
+            SizedBox(width: isLoading ? 16.w : 0),
             if (isLoading)
               SizedBox.square(
                 dimension: 20.w,
@@ -282,13 +295,13 @@ class MessageWidget extends StatelessWidget {
             else
               Expanded(
                 child: Container(
-                  decoration: BoxDecoration(
-                    // color: ZColors.white,
-                    borderRadius: BorderRadius.circular(20),
+                  decoration: const BoxDecoration(
+                    // color: ZColors.black,
+                    // borderRadius: BorderRadius.circular(20),
                   ),
                   padding: EdgeInsets.symmetric(
                     horizontal: 16.w,
-                    vertical: 12.h,
+                    // vertical: 12.h,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -298,15 +311,15 @@ class MessageWidget extends StatelessWidget {
                         MarkdownBody(
                           data: text,
                           styleSheet: MarkdownStyleSheet(
-                            p: context.styles.medium,
+                            p: context.styles.mDemilight,
                             h1: context.styles.h1,
                             h2: context.styles.h2,
                             h3: context.styles.h3,
-                            blockquote: context.styles.medium.copyWith(
+                            blockquote: context.styles.mRegular.copyWith(
                               fontStyle: FontStyle.italic,
                               color: Theme.of(context).colorScheme.secondary,
                             ),
-                            code: context.styles.medium.copyWith(
+                            code: context.styles.mRegular.copyWith(
                               fontFamily: 'monospace',
                               backgroundColor: Colors.grey.shade200,
                             ),
@@ -339,7 +352,7 @@ class MessageWidget extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
         text,
-        style: isBold ? context.styles.medium : context.styles.small,
+        style: isBold ? context.styles.mRegular : context.styles.sDemilight,
         // textAlign: TextAlign.center,
       ),
     );

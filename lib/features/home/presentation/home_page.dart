@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart'; // Для kDebugMode
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'dart:ui'; // Добавляем импорт для ImageFilter
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
+import 'package:zhi_ming/core/services/adapty/adapty_service_impl.dart'; // Для дебажной кнопки
 import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/widgets/z_button.dart';
 import 'package:zhi_ming/core/widgets/z_scaffold.dart';
@@ -40,6 +41,68 @@ class HomePage extends StatelessWidget {
               childCount: questions.length,
             ),
           ),
+          // Дебажная кнопка в самом низу страницы
+          if (kDebugMode)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.all(20.w),
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () async {
+                      final adaptyService = AdaptyServiceImpl();
+
+                      // Деактивируем подписку
+                      await adaptyService.deactivateSubscription();
+
+                      // Сбрасываем счетчик бесплатных запросов
+                      await adaptyService.resetFreeRequests();
+
+                      // Обновляем состояние ChatCubit если он доступен
+                      try {
+                        final chatCubit = context.read<ChatCubit>();
+                        await chatCubit.clear(); // Полностью очищаем состояние
+                      } catch (e) {
+                        // ChatCubit может быть недоступен, это нормально
+                        debugPrint('ChatCubit недоступен: $e');
+                      }
+
+                      // Показываем уведомление
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('🔄 Подписка и счетчик сброшены'),
+                            duration: Duration(seconds: 2),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.refresh, color: Colors.white, size: 24.w),
+                          SizedBox(width: 8.w),
+                          Text(
+                            'Debug Reset',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -122,7 +185,7 @@ class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({super.key, this.isExpanded = false});
+  const _Header({this.isExpanded = false});
   final bool isExpanded;
 
   @override
@@ -175,14 +238,22 @@ class _Header extends StatelessWidget {
           ],
         ),
         const Spacer(),
-        Image.asset('assets/ded.png'),
+        Column(
+          children: [
+            SizedBox(
+              width: 100.w,
+              height: 100.h,
+              child: Image.asset('assets/ded.png', fit: BoxFit.cover),
+            ),
+          ],
+        ),
       ],
     );
   }
 }
 
 class _ScrollButton extends StatelessWidget {
-  const _ScrollButton({super.key});
+  const _ScrollButton();
 
   @override
   Widget build(BuildContext context) {
@@ -210,8 +281,8 @@ class _ScrollButton extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('开启你的命运之旅', style: context.styles.regular),
-                    Text('探索八字的奥秘', style: context.styles.medium),
+                    Text('开启你的命运之旅', style: context.styles.lRegular),
+                    Text('探索八字的奥秘', style: context.styles.mRegular),
                   ],
                 ),
               ],

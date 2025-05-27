@@ -156,7 +156,7 @@ class ShakePhoneWidgetState extends State<ShakePhoneWidget>
                               isInitial
                                   ? '摇动手机以投掷硬币。\n总共需要进行6次投掷。'
                                   : '摇动以进行下一次投掷或点击硬币\n已完成 ${widget.shakeService.currentShakeCount}/6 次',
-                              style: context.styles.medium,
+                              style: context.styles.mRegular,
                               textAlign: TextAlign.center,
                             ),
                           ),

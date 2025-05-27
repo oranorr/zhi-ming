@@ -44,7 +44,7 @@ class QuestionEntity {
             },
             child: Container(
               width: double.infinity,
-              height: 70.h,
+              height: 75.h,
               decoration: BoxDecoration(
                 color: backColor,
                 borderRadius: BorderRadius.circular(20),
@@ -56,9 +56,9 @@ class QuestionEntity {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title, style: context.styles.medium),
-                        // SizedBox(height: 12.h),
-                        Text(subtitle, style: context.styles.small),
+                        Text(title, style: context.styles.mMedium),
+                        // SizedBox(height: 4.h),
+                        Text(subtitle, style: context.styles.sDemilight),
                       ],
                     ),
                     const Spacer(),
@@ -68,7 +68,10 @@ class QuestionEntity {
                         border: Border.all(color: arrowColor),
                       ),
                       padding: EdgeInsets.all(12.w),
-                      child: SvgPicture.asset('assets/arrow-right.svg'),
+                      child: SvgPicture.asset(
+                        'assets/arrow-right.svg',
+                        color: arrowColor,
+                      ),
                     ),
                     // Text()
                   ],

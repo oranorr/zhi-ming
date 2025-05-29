@@ -1,7 +1,7 @@
 name: zhi_ming
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.1+3
+version: 0.1.1+4
 
 environment:
   sdk: ^3.7.2

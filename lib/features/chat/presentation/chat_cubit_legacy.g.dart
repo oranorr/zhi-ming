@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'chat_cubit.dart';
+part of 'chat_cubit_legacy.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator

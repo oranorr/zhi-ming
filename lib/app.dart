@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,7 +30,7 @@ class _AppState extends State<App> {
   @override
   void initState() {
     super.initState();
-    _checkOnboardingStatus();
+    unawaited(_checkOnboardingStatus());
   }
 
   /// Проверяет, был ли пройден онбординг
@@ -42,8 +44,8 @@ class _AppState extends State<App> {
         _onboardingCompleted = onboardingCompleted;
         _isInitializing = false;
       });
-    } catch (e) {
-      print('Ошибка при проверке статуса онбординга: $e');
+    } on Exception catch (e) {
+      debugPrint('Ошибка при проверке статуса онбординга: $e');
       setState(() {
         _onboardingCompleted = false;
         _isInitializing = false;

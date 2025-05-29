@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 import 'package:zhi_ming/core/services/deepseek/models/response_parsers.dart';
 import 'package:zhi_ming/core/services/deepseek/prompts.dart';
+import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/iching/models/hexagram.dart';
 
 enum AgentType {
@@ -152,11 +153,15 @@ class DeepSeekService {
         debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ОШИБКОЙ) ======');
         return 'Ошибка при обработке запроса: ${response.statusCode}';
       }
-    } catch (e, stackTrace) {
+    } on DioException catch (e, stackTrace) {
       debugPrint('ИСКЛЮЧЕНИЕ при отправке сообщения в API: $e');
       debugPrint(
         'Stack trace: ${stackTrace.toString().split("\n").take(10).join("\n")}',
       );
+      debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ИСКЛЮЧЕНИЕМ) ======');
+      return 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже. Детали: $e';
+    } on Exception catch (e) {
+      debugPrint('Исключение при отправке сообщения в API: $e');
       debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ИСКЛЮЧЕНИЕМ) ======');
       return 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже. Детали: $e';
     }
@@ -202,9 +207,10 @@ class DeepSeekService {
         'stream': true,
       });
 
-      final request = http.Request('POST', url);
-      request.headers.addAll(headers);
-      request.body = requestBody;
+      final request =
+          http.Request('POST', url)
+            ..headers.addAll(headers)
+            ..body = requestBody;
 
       final response = await http.Client().send(request);
 
@@ -227,7 +233,7 @@ class DeepSeekService {
         debugPrint('Тело ответа: $responseBody');
         yield 'Ошибка стриминга: ${response.statusCode}. Детали: $responseBody';
       }
-    } catch (e) {
+    } on Exception catch (e) {
       debugPrint('Исключение при стриминге: $e');
       yield 'Произошла ошибка при обработке запроса: $e';
     }
@@ -251,12 +257,16 @@ class DeepSeekService {
           requestText = request.first;
         } else {
           // Если несколько сообщений, объединяем их с контекстом
-          requestText = 'Пользователь постепенно формулирует вопрос:\n\n';
+          final buffer = StringBuffer(
+            'Пользователь постепенно формулирует вопрос:\n\n',
+          );
           for (int i = 0; i < request.length; i++) {
-            requestText += '${i + 1}. ${request[i]}\n';
+            buffer.write('${i + 1}. ${request[i]}\n');
           }
-          requestText +=
-              '\nОцени общий смысл всех сообщений как единый вопрос для гадания.';
+          buffer.write(
+            '\nОцени общий смысл всех сообщений как единый вопрос для гадания.',
+          );
+          requestText = buffer.toString();
         }
       } else {
         return RequestValidationResponse.error(
@@ -326,7 +336,7 @@ class DeepSeekService {
       // Пытаемся распарсить очищенный ответ как JSON
       try {
         return RequestValidationResponse.fromJson(cleanedResponse);
-      } catch (e) {
+      } on FormatException catch (e) {
         debugPrint('Ошибка парсинга JSON: $e');
 
         // Проверяем содержимое ответа на ключевые слова
@@ -345,7 +355,7 @@ class DeepSeekService {
           'Не удалось обработать ответ: $response',
         );
       }
-    } catch (e) {
+    } on Exception catch (e) {
       return RequestValidationResponse.error('Ошибка при проверке запроса: $e');
     }
   }
@@ -454,75 +464,131 @@ class DeepSeekService {
     return result;
   }
 
-  /// Отправляет запрос интерпретатору гексаграмм
-  Future<String> interpretHexagrams({
+  /// Парсит JSON ответ от интерпретатора и возвращает соответствующую модель
+  dynamic parseInterpretationResponse(String response) {
+    try {
+      debugPrint('=== Начало парсинга JSON интерпретации ===');
+      debugPrint('Длина ответа: ${response.length}');
+
+      // Извлекаем JSON из ответа (может быть обернут в markdown или другой текст)
+      final jsonMatch = RegExp(r'\{.*\}', dotAll: true).firstMatch(response);
+      if (jsonMatch == null) {
+        debugPrint('JSON не найден в ответе');
+        return null;
+      }
+
+      final jsonString = jsonMatch.group(0)!;
+      debugPrint('Найден JSON блок длиной: ${jsonString.length}');
+
+      final parsed = json.decode(jsonString);
+
+      // Определяем тип интерпретации по наличию ключей
+      if (parsed.containsKey('interpretation_primary') &&
+          parsed.containsKey('interpretation_secondary')) {
+        debugPrint('Обнаружена сложная интерпретация');
+        return ComplexInterpretation.fromJson(parsed);
+      } else if (parsed.containsKey('interpretation_summary')) {
+        debugPrint('Обнаружена простая интерпретация');
+        return SimpleInterpretation.fromJson(parsed);
+      } else {
+        debugPrint('Неизвестный формат интерпретации');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Ошибка парсинга JSON интерпретации: $e');
+      return null;
+    }
+  }
+
+  /// Отправляет запрос интерпретатору гексаграмм с возвращением структурированного ответа
+  Future<dynamic> interpretHexagramsStructured({
     required String question,
     required Hexagram primaryHexagram,
     Hexagram? secondaryHexagram,
   }) async {
     try {
-      debugPrint('=== Начало интерпретации гексаграмм ===');
+      debugPrint('=== Начало структурированной интерпретации гексаграмм ===');
       debugPrint('Вопрос пользователя: $question');
-      debugPrint('Первичная гексаграмма:');
-      debugPrint('- Номер: ${primaryHexagram.number}');
-      debugPrint('- Название: ${primaryHexagram.name}');
-      debugPrint('- Бинарный код: ${primaryHexagram.binaryId}');
-      debugPrint('- Описание: ${primaryHexagram.description}');
-      debugPrint(
-        '- Изменяющиеся линии: ${primaryHexagram.lines.asMap().entries.where((e) => e.value.isChanging).map((e) => e.key + 1).toList()}',
-      );
-
-      if (secondaryHexagram != null) {
-        debugPrint('Вторичная гексаграмма:');
-        debugPrint('- Номер: ${secondaryHexagram.number}');
-        debugPrint('- Название: ${secondaryHexagram.name}');
-        debugPrint('- Бинарный код: ${secondaryHexagram.binaryId}');
-        debugPrint('- Описание: ${secondaryHexagram.description}');
-      }
 
       // Формируем сообщение для интерпретатора
-      final message = jsonEncode({
+      final messageData = <String, dynamic>{
         'question': question,
         'primary_hexagram': {
-          'hexa_name': primaryHexagram.name,
-          'hexa_info': primaryHexagram.description,
-          'number': primaryHexagram.number,
-          'changing_lines':
-              primaryHexagram.lines
-                  .asMap()
-                  .entries
-                  .where((e) => e.value.isChanging)
-                  .map((e) => e.key + 1)
-                  .toList(),
+          'hexa_name': primaryHexagram.name ?? '',
+          'hexa_info': primaryHexagram.description ?? '',
         },
-        if (secondaryHexagram != null)
-          'secondary_hexagram': {
-            'hexa_name': secondaryHexagram.name,
-            'hexa_info': secondaryHexagram.description,
-            'number': secondaryHexagram.number,
-          },
-      });
+      };
 
-      debugPrint('Отправляем запрос интерпретатору:');
-      debugPrint(message);
+      // Если есть изменяющиеся линии, добавляем вторичную гексаграмму
+      final changingLines =
+          primaryHexagram.lines
+              .asMap()
+              .entries
+              .where((e) => e.value.isChanging)
+              .map((e) => e.key + 1)
+              .toList();
 
-      // Отправляем запрос интерпретатору
+      if (changingLines.isNotEmpty && secondaryHexagram != null) {
+        messageData['secondary_hexagram'] = {
+          'hexa_name': secondaryHexagram.name ?? '',
+          'hexa_info': secondaryHexagram.description ?? '',
+        };
+        messageData['changing_lines'] = changingLines;
+      }
+
+      final message = json.encode(messageData);
+      debugPrint('Отправляем структурированный запрос интерпретатору');
+
+      // Отправляем запрос интерпретатору с обновленным промптом
       final response = await sendMessage(
         agentType: AgentType.ichingInterpreter,
         message: message,
       );
 
-      debugPrint('Получен ответ от интерпретатора:');
-      debugPrint(response);
-      debugPrint('=== Конец интерпретации гексаграмм ===');
+      debugPrint('Получен ответ от интерпретатора');
 
-      // Извлекаем markdown-текст из ответа
-      final cleaned = _extractMarkdownFromResponse(response);
-      return cleaned;
+      // Парсим структурированный ответ
+      final parsedInterpretation = parseInterpretationResponse(response);
+
+      if (parsedInterpretation != null) {
+        debugPrint('Успешно спарсена структурированная интерпретация');
+        return parsedInterpretation;
+      } else {
+        debugPrint(
+          'Не удалось спарсить структурированную интерпретацию, возвращаем текст',
+        );
+        // Возвращаем исходный текст как fallback
+        return _extractMarkdownFromResponse(response);
+      }
     } catch (e) {
-      debugPrint('Ошибка при интерпретации гексаграмм: $e');
-      debugPrint('=== Конец интерпретации гексаграмм (с ошибкой) ===');
+      debugPrint('Ошибка при структурированной интерпретации гексаграмм: $e');
       return 'Произошла ошибка при интерпретации гексаграмм. Пожалуйста, попробуйте позже.';
+    }
+  }
+
+  /// Отправляет запрос интерпретатору гексаграмм (старый метод - для совместимости)
+  Future<String> interpretHexagrams({
+    required String question,
+    required Hexagram primaryHexagram,
+    Hexagram? secondaryHexagram,
+  }) async {
+    final result = await interpretHexagramsStructured(
+      question: question,
+      primaryHexagram: primaryHexagram,
+      secondaryHexagram: secondaryHexagram,
+    );
+
+    if (result is String) {
+      return result;
+    } else {
+      // Если получили структурированный ответ, извлекаем основной текст
+      if (result is SimpleInterpretation) {
+        return result.answer;
+      } else if (result is ComplexInterpretation) {
+        return result.answer;
+      } else {
+        return 'Получен неожиданный тип ответа от интерпретатора.';
+      }
     }
   }
 

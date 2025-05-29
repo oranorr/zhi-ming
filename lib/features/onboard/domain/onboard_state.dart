@@ -26,9 +26,22 @@ class OnboardState extends Equatable {
   final String currentInput;
   final int currentQuestionIndex;
   final DateTime? birthDate;
+
+  @JsonKey(fromJson: _timeOfDayFromJson, toJson: _timeOfDayToJson)
   final TimeOfDay? birthTime;
+
   final bool isCompleted;
   final bool isLoading;
+
+  static TimeOfDay? _timeOfDayFromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    return TimeOfDay(hour: json['hour'] as int, minute: json['minute'] as int);
+  }
+
+  static Map<String, dynamic>? _timeOfDayToJson(TimeOfDay? timeOfDay) {
+    if (timeOfDay == null) return null;
+    return {'hour': timeOfDay.hour, 'minute': timeOfDay.minute};
+  }
 
   OnboardState copyWith({
     bool? isDatePickerVisible,

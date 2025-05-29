@@ -19,6 +19,9 @@ OnboardState _$OnboardStateFromJson(Map<String, dynamic> json) => OnboardState(
       json['birthDate'] == null
           ? null
           : DateTime.parse(json['birthDate'] as String),
+  birthTime: OnboardState._timeOfDayFromJson(
+    json['birthTime'] as Map<String, dynamic>?,
+  ),
   isCompleted: json['isCompleted'] as bool? ?? false,
   isLoading: json['isLoading'] as bool? ?? false,
 );
@@ -30,6 +33,7 @@ Map<String, dynamic> _$OnboardStateToJson(OnboardState instance) =>
       'currentInput': instance.currentInput,
       'currentQuestionIndex': instance.currentQuestionIndex,
       'birthDate': instance.birthDate?.toIso8601String(),
+      'birthTime': OnboardState._timeOfDayToJson(instance.birthTime),
       'isCompleted': instance.isCompleted,
       'isLoading': instance.isLoading,
     };

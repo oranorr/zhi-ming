@@ -9,8 +9,8 @@ class ZScaffold extends StatelessWidget {
   final bool? isHome;
   final bool? isChat;
   const ZScaffold({
-    super.key,
     required this.child,
+    super.key,
     this.isHome = true,
     this.isChat = true,
   });
@@ -18,14 +18,16 @@ class ZScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      bottomNavigationBar: isHome == true ? ZNavigationBar() : null,
+      bottomNavigationBar: isHome == true ? const ZNavigationBar() : null,
       extendBody: isHome ?? false,
       body: Container(
         width: double.infinity,
         height: double.infinity,
         decoration: BoxDecoration(
           gradient:
-              (isChat ?? false) ? ZColors.chatGradient : ZColors.homeGradient,
+              (isChat ?? false)
+                  ? ZColors.chatGradient.withOpacity(0.2)
+                  : ZColors.homeGradient,
         ),
         child: Center(child: child),
       ),

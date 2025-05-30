@@ -51,6 +51,7 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
 
                 // Виджет ввода сообщения (если нужен)
                 _buildInputWidget(state),
+                if (analysisResult != null) SizedBox(height: 36.h),
               ],
             ),
           ),
@@ -61,6 +62,7 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
 
   // Метод для построения заголовка с дедом
   Widget _buildHeader() {
+    // Если показываем результат анализа, не показываем никакого текста вверху
     if (analysisResult != null) {
       return SizedBox(height: 35.h);
     }
@@ -130,12 +132,33 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
     }
 
     if (birthdateSelected) {
-      // Если анализ уже готов, показываем результат
+      // Если анализ уже готов, показываем результат внизу как в чате
       if (analysisResult != null) {
-        return MessageWidget(
-          isMe: false,
-          text: analysisResult!.text,
-          isLoading: false,
+        return Column(
+          children: [
+            // Пустое пространство для смещения сообщения вниз
+            const Spacer(),
+
+            // Сообщение с результатом анализа внизу
+            MessageWidget(
+              isMe: false,
+              text: analysisResult!.text,
+              isLoading: false,
+            ),
+
+            // Если есть второе сообщение от деда, показываем его тоже
+            if (secondMessage != null) ...[
+              SizedBox(height: 12.h),
+              MessageWidget(
+                isMe: false,
+                text: secondMessage!.text,
+                isLoading: false,
+              ),
+            ],
+
+            // Небольшой отступ внизу
+            SizedBox(height: 20.h),
+          ],
         );
       }
 

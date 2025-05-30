@@ -93,10 +93,61 @@ class _ChatScreenState extends State<ChatScreen> {
     SystemChannels.textInput.invokeMethod('TextInput.hide');
   }
 
+  /// [_ChatScreenState] Метод для плавной прокрутки к началу списка (последнему сообщению)
+  void _scrollToBottom({bool animated = true}) {
+    print('[_ChatScreenState] _scrollToBottom вызван, animated: $animated');
+
+    if (_scrollController.hasClients) {
+      print('[_ChatScreenState] ScrollController имеет клиентов');
+      print(
+        '[_ChatScreenState] Текущая позиция: ${_scrollController.position.pixels}',
+      );
+      print(
+        '[_ChatScreenState] Максимальная позиция: ${_scrollController.position.maxScrollExtent}',
+      );
+
+      if (animated) {
+        _scrollController.animateTo(
+          _scrollController
+              .position
+              .maxScrollExtent, // Прокручиваем к концу списка (последнее сообщение)
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    } else {
+      print('[_ChatScreenState] ScrollController НЕ имеет клиентов');
+    }
+  }
+
+  /// [_ChatScreenState] Метод для обработки отправки сообщения с UX улучшениями
+  void _handleSendMessage() {
+    print('[_ChatScreenState] Отправка сообщения пользователем');
+
+    // Скрываем клавиатуру перед отправкой
+    _hideKeyboard();
+
+    // Отправляем сообщение
+    cubit.sendMessage();
+
+    // Прокручиваем к отправленному сообщению с небольшой задержкой
+    // чтобы дать время на обновление UI и показать пользователю его сообщение
+    Future.delayed(const Duration(milliseconds: 150), () {
+      print('[_ChatScreenState] Прокрутка к отправленному сообщению');
+      _scrollToBottom();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocListener<ChatCubit, ChatState>(
       listener: (context, state) {
+        // [_ChatScreenState] Убираем автоматическую прокрутку при получении сообщений от агента
+        // Оставляем только прокрутку при отправке пользовательских сообщений
+        // для лучшего UX согласно Apple Guidelines
+
         // Слушаем флаг навигации на paywall
         if (state.shouldNavigateToPaywall) {
           // Сбрасываем флаг
@@ -181,7 +232,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                 !message.isMe;
 
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
+                              padding: EdgeInsets.only(
+                                bottom:
+                                    index != state.messages.length - 1
+                                        ? 24.h
+                                        : 0,
+                              ),
                               child: MessageWidget(
                                 isMe: message.isMe,
                                 isLoading: isLoading,
@@ -240,7 +296,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     InputSendWidget(
-                      onSend: () => cubit.sendMessage(),
+                      onSend:
+                          _handleSendMessage, // Используем новый метод вместо прямого вызова cubit.sendMessage()
                       onTextChanged: (text) => cubit.updateInput(text),
                       isSendAvailable: state.isSendAvailable,
                       currentInput: state.currentInput,
@@ -358,21 +415,29 @@ class _MessageWidgetState extends State<MessageWidget>
     // log(widget.message.toString());
 
     if (widget.isMe) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          constraints: BoxConstraints(maxWidth: 260.w),
-          decoration: BoxDecoration(
-            color: ZColors.yellowLight,
-            borderRadius: BorderRadius.circular(20),
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          // Контейнер с сообщением - он будет занимать только необходимое место
+          // с максимальной шириной в 75% экрана
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: ZColors.yellowLight,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+              child: Text(
+                _displayedText,
+                style: context.styles.mDemilight,
+                softWrap: true,
+              ),
+            ),
           ),
-          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-          child: Text(
-            _displayedText,
-            style: context.styles.mDemilight,
-            softWrap: true,
-          ),
-        ),
+        ],
       );
     } else {
       // [MessageWidget] Определяем, короткое ли сообщение для центрирования по вертикали

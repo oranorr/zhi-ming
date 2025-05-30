@@ -20,13 +20,14 @@ class HomePage extends StatelessWidget {
     final questions = HomeLocalRepo().questions;
     return ZScaffold(
       isHome: false,
+      isChat: false,
       child: CustomScrollView(
         slivers: [
           SliverPersistentHeader(
             pinned: true,
             delegate: _SliverHeaderDelegate(
-              minHeight: 255.h,
-              maxHeight: 280.h,
+              minHeight: 250.h,
+              maxHeight: 270.h,
               child: const _Header(),
             ),
           ),
@@ -154,9 +155,10 @@ class _SliverHeaderDelegate extends SliverPersistentHeaderDelegate {
       ),
       // Содержимое хедера с усиленным градиентом
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          gradient:
-              ZColors.homeGradient, // Используем созданный усиленный градиент
+        decoration: BoxDecoration(
+          color: isExpanded ? Colors.transparent : null,
+          gradient: isExpanded ? null : ZColors.homeGradient,
+          //     ZColors.homeGradient, // Используем созданный усиленный градиент
         ),
         child: Padding(
           padding: EdgeInsets.only(top: topPadding),

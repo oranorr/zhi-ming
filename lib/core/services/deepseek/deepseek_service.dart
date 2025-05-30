@@ -179,6 +179,7 @@ class DeepSeekService {
       final messages = <Map<String, dynamic>>[];
 
       // Добавляем системное сообщение в зависимости от типа агента
+      // ignore: cascade_invocations
       messages.add({
         'role': 'system',
         'content': _getSystemPromptByAgentType(agentType),
@@ -366,7 +367,7 @@ class DeepSeekService {
     debugPrint(
       '--- Начало обработки ответа в _extractMarkdownFromResponse ---',
     );
-    String result = response.trim() ?? '';
+    String result = response.trim();
 
     if (result.isEmpty) {
       debugPrint('Получен пустой ответ, возвращаем пустую строку');
@@ -442,7 +443,7 @@ class DeepSeekService {
           'Распарсенный JSON не является объектом или равен null: $parsed',
         );
       }
-    } catch (e) {
+    } on Exception catch (e) {
       // Не JSON — оставляем как есть
       debugPrint('Не удалось распарсить JSON: $e');
       debugPrint('Используем исходный ответ');
@@ -494,7 +495,7 @@ class DeepSeekService {
         debugPrint('Неизвестный формат интерпретации');
         return null;
       }
-    } catch (e) {
+    } on Exception catch (e) {
       debugPrint('Ошибка парсинга JSON интерпретации: $e');
       return null;
     }
@@ -560,7 +561,7 @@ class DeepSeekService {
         // Возвращаем исходный текст как fallback
         return _extractMarkdownFromResponse(response);
       }
-    } catch (e) {
+    } on Exception catch (e) {
       debugPrint('Ошибка при структурированной интерпретации гексаграмм: $e');
       return 'Произошла ошибка при интерпретации гексаграмм. Пожалуйста, попробуйте позже.';
     }
@@ -659,8 +660,7 @@ class DeepSeekService {
                   .entries
                   .where((e) => e.value.isChanging)
                   .map((e) => e.key + 1)
-                  .toList() ??
-              [],
+                  .toList(),
         },
         if (secondaryHexagram != null)
           'secondary_hexagram': {
@@ -717,7 +717,7 @@ class DeepSeekService {
       debugPrint('====== КОНЕЦ ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА ======');
 
       return cleaned;
-    } catch (e, stackTrace) {
+    } on Exception catch (e, stackTrace) {
       debugPrint('ИСКЛЮЧЕНИЕ при обработке последующего вопроса: $e');
       debugPrint(
         'Stack trace: ${stackTrace.toString().split("\n").take(10).join("\n")}',
@@ -777,7 +777,7 @@ class DeepSeekService {
       debugPrint('Тело ответа: ${response.data}');
 
       return 'Соединение успешно установлено. Статус: ${response.statusCode}';
-    } catch (e) {
+    } on Exception catch (e) {
       debugPrint('Ошибка при тестировании соединения: $e');
       return 'Ошибка соединения: $e';
     }

@@ -1,3 +1,5 @@
+import 'package:zhi_ming/features/adapty/domain/models/subscription_product.dart';
+
 abstract interface class AdaptyService {
   Future<void> init();
 
@@ -21,4 +23,13 @@ abstract interface class AdaptyService {
 
   /// Деактивация подписки
   Future<void> deactivateSubscription();
+
+  /// Получение списка доступных продуктов подписки
+  Future<List<SubscriptionProduct>> getAvailableProducts();
+
+  /// Покупка подписки по идентификатору продукта
+  Future<bool> purchaseSubscription(String productId);
+
+  /// Восстановление покупок пользователя
+  Future<bool> restorePurchases();
 }

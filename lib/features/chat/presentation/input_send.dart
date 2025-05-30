@@ -51,8 +51,9 @@ class _InputSendWidgetState extends State<InputSendWidget> {
 
   @override
   void dispose() {
-    _controller.removeListener(_onTextChanged);
-    _controller.dispose();
+    _controller
+      ..removeListener(_onTextChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -118,7 +119,7 @@ class TextInputWidget extends StatelessWidget {
 class _SendButton extends StatelessWidget {
   final bool isActive;
   final VoidCallback? onTap;
-  const _SendButton({required this.isActive, this.onTap, super.key});
+  const _SendButton({required this.isActive, this.onTap});
 
   @override
   Widget build(BuildContext context) {

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
-import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_screen.dart';
@@ -51,6 +50,9 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
   // Результат анализа от DeepSeek
   MessageEntity? analysisResult;
 
+  // Второе сообщение от агента
+  MessageEntity? secondMessage;
+
   @override
   void initState() {
     super.initState();
@@ -68,7 +70,11 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
 
     if (onboardingCompleted && mounted) {
       // Если онбординг был пройден, переходим на домашний экран
-      navigateToHome();
+      // Используем прямой Navigator.pushReplacement чтобы избежать повторного сохранения статуса
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
     }
   }
 
@@ -237,23 +243,18 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
           analysisResult = resultMessage;
           dedMessage =
               '分析已完成！这是你的个性描述。'; // "Анализ завершен! Вот описание вашей личности."
-        });
 
-        // Сохраняем статус завершения онбординга
-        _saveOnboardingCompleted();
-
-        // Добавляем задержку перед вторым сообщением
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            setState(() {
-              dedMessage = '这只是一个大致的概念。你想尝试易经占卜，以便对具体问题得到答案吗？';
-            });
-          }
+          // Сразу добавляем второе сообщение без задержек
+          secondMessage = MessageEntity(
+            text: '这只是一个大致的概念。你想尝试易经占卜，以便对具体问题得到答案吗？',
+            isMe: false,
+            timestamp: DateTime.now(),
+          );
         });
       }
     } catch (e) {
       // В случае ошибки выводим сообщение и продолжаем
-      print('Ошибка при анализе данных: $e');
+      print('[saveInterests] Ошибка при анализе данных: $e');
 
       if (mounted) {
         setState(() {
@@ -266,30 +267,44 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
             isMe: false,
             timestamp: DateTime.now(),
           );
-        });
 
-        // Даже при ошибке сохраняем статус завершения онбординга
-        _saveOnboardingCompleted();
+          // Сразу добавляем второе сообщение без задержки
+          secondMessage = MessageEntity(
+            text: '这只是一个大致的概念。你想尝试易经占卜，以便对具体问题得到答案吗？',
+            isMe: false,
+            timestamp: DateTime.now(),
+          );
+        });
       }
     }
   }
 
   /// Метод для перехода на домашний экран
-  void navigateToHome() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const HomePage()),
-    );
+  Future<void> navigateToHome() async {
+    // Сохраняем статус завершения онбординга перед переходом
+    await _saveOnboardingCompleted();
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    }
   }
 
   /// Метод для перехода на экран чата
-  void navigateToChat() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder:
-            (context) => ChatScreen(entrypoint: OnboardingEntrypointEntity()),
-      ),
-    );
+  Future<void> navigateToChat() async {
+    // Сохраняем статус завершения онбординга перед переходом
+    await _saveOnboardingCompleted();
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder:
+              (context) => ChatScreen(entrypoint: OnboardingEntrypointEntity()),
+        ),
+      );
+    }
   }
 }

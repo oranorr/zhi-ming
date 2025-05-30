@@ -1,12 +1,15 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/core/services/adapty/adapty_service.dart';
 import 'package:zhi_ming/core/services/adapty/adapty_service_impl.dart';
+import 'package:zhi_ming/core/theme/theme_colors.dart';
 import 'package:zhi_ming/core/widgets/z_button.dart';
 import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/adapty/domain/models/subscription_product.dart';
 
 class Paywall extends StatefulWidget {
   const Paywall({super.key});
@@ -46,7 +49,7 @@ class _PaywallState extends State<Paywall> {
                   stops: [0.0, 0.32, 0.57, 1.0],
                 ),
               ),
-              child: SizedBox(width: double.infinity, height: double.infinity),
+              child: SizedBox.expand(),
             ),
             // Белый градиент поверх
             Opacity(
@@ -75,15 +78,135 @@ class _PaywallState extends State<Paywall> {
 }
 
 class _PaywallBody extends StatefulWidget {
-  const _PaywallBody({super.key});
+  const _PaywallBody();
 
   @override
   State<_PaywallBody> createState() => __PaywallBodyState();
 }
 
-class __PaywallBodyState extends State<_PaywallBody> {
+class __PaywallBodyState extends State<_PaywallBody>
+    with TickerProviderStateMixin {
   int selectedPlanIndex = 0; // Первый план выбран по умолчанию
   bool isSuccess = false;
+  bool isLoading = true; // Добавляем состояние загрузки
+  bool isPurchasing = false; // Состояние загрузки покупки
+  bool isRestoring = false; // Состояние восстановления покупок
+  List<SubscriptionProduct> products = []; // Реальные продукты
+  String purchaseStatusText = ''; // Текст статуса покупки
+
+  // Анимация для пульсации во время покупки
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts(); // Загружаем продукты при инициализации
+
+    // Инициализация анимации пульсации
+    _pulseController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  /// Загрузка доступных продуктов из AdaptyService
+  Future<void> _loadProducts() async {
+    try {
+      debugPrint('[PaywallBody] Загрузка продуктов...');
+      final loadedProducts =
+          await _PaywallState._adaptyService.getAvailableProducts();
+
+      setState(() {
+        products = loadedProducts;
+        isLoading = false;
+      });
+
+      debugPrint('[PaywallBody] Загружено ${products.length} продуктов');
+    } catch (e) {
+      debugPrint('[PaywallBody] Ошибка загрузки продуктов: $e');
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  /// Показ оверлея с индикатором загрузки
+  Widget _buildLoadingOverlay() {
+    if (!isPurchasing && !isRestoring) return const SizedBox.shrink();
+
+    return ColoredBox(
+      color: Colors.black.withOpacity(0.5),
+      child: Center(
+        child: Container(
+          width: 280.w,
+          height: 180.h,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20.r),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Анимированный индикатор загрузки
+              AnimatedBuilder(
+                animation: _pulseAnimation,
+                builder: (context, child) {
+                  return Transform.scale(
+                    scale: _pulseAnimation.value,
+                    child: Container(
+                      width: 60.w,
+                      height: 60.h,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B73FF).withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF6B73FF),
+                        ),
+                        strokeWidth: 3,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              SizedBox(height: 24.h),
+              Text(
+                purchaseStatusText,
+                style: context.styles.h3.copyWith(fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                isPurchasing ? '请稍等，正在处理您的购买...' : '正在恢复您的购买...',
+                style: context.styles.mRegular.copyWith(
+                  color: Colors.grey.shade600,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,9 +253,9 @@ class __PaywallBodyState extends State<_PaywallBody> {
           child: Padding(
             padding: EdgeInsets.all(20.w),
             child: Zbutton(
-              action: () {
+              action: () async {
                 // Возврат на домашний экран
-                Navigator.of(context).pushAndRemoveUntil(
+                await Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const HomePage()),
                   (route) => false,
                 );
@@ -146,81 +269,268 @@ class __PaywallBodyState extends State<_PaywallBody> {
         ),
       );
     }
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            SizedBox(height: 50.h),
-            Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    // Закрытие paywall и возврат на домашний экран
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (context) => const HomePage()),
-                      (route) => false,
-                    );
-                  },
-                  icon: const Icon(Icons.close, size: 30),
-                  padding: EdgeInsets.zero,
-                  style: IconButton.styleFrom(padding: EdgeInsets.zero),
+
+    return Stack(
+      children: [
+        // Основной контент
+        AbsorbPointer(
+          absorbing:
+              isPurchasing ||
+              isRestoring, // Блокируем взаимодействие во время покупки
+          child: Opacity(
+            opacity:
+                isPurchasing || isRestoring ? 0.5 : 1.0, // Затемняем контент
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 20.w),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    SizedBox(height: 50.h),
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: () async {
+                            // Предотвращаем закрытие во время покупки
+                            if (isPurchasing || isRestoring) return;
+
+                            // Закрытие paywall и возврат на домашний экран
+                            await Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(
+                                builder: (context) => const HomePage(),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                          icon: Icon(
+                            Icons.close,
+                            size: 30,
+                            color:
+                                isPurchasing || isRestoring
+                                    ? Colors.grey
+                                    : Colors.black,
+                          ),
+                          padding: EdgeInsets.zero,
+                          style: IconButton.styleFrom(padding: EdgeInsets.zero),
+                        ),
+                      ],
+                    ),
+                    SizedBox(
+                      height: 114.h,
+                      width: 111.w,
+                      child: Image.asset('assets/heads.png'),
+                    ),
+                    SizedBox(height: 18.h),
+                    Text('您的占卜已结束', style: context.styles.h2),
+                    SizedBox(height: 6.h),
+                    Text('升级VIP，畅享全部功能', style: context.styles.h2),
+                    SizedBox(height: 24.h),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('要继续并了解更多：', style: context.styles.mRegular),
+                              SizedBox(height: 10.h),
+                              ..._buildAdvantages(),
+                              SizedBox(height: 32.h),
+                              // Показываем индикатор загрузки или продукты
+                              if (isLoading)
+                                const Center(child: CircularProgressIndicator())
+                              else if (products.isEmpty)
+                                Text(
+                                  '暂无可用套餐',
+                                  style: context.styles.mRegular.copyWith(
+                                    color: Colors.grey,
+                                  ),
+                                )
+                              else
+                                ..._buildPlans(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8.h),
+                    Text(
+                      '自动续订，可随时取消。\n条款和隐私政策。恢复购买',
+                      style: context.styles.mDemilight.copyWith(
+                        color: Colors.black,
+                        height: 1.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 8.h),
+                    // Кнопка восстановления покупок
+                    TextButton(
+                      onPressed: () async {
+                        if (isPurchasing || isRestoring) return;
+
+                        // Хэптик фидбек при нажатии
+                        HapticFeedback.lightImpact();
+
+                        setState(() {
+                          isRestoring = true;
+                          purchaseStatusText = '正在验证您的购买记录...';
+                        });
+
+                        // Запускаем анимацию пульсации
+                        _pulseController.repeat(reverse: true);
+
+                        try {
+                          debugPrint('[PaywallBody] Восстановление покупок');
+                          final success =
+                              await _PaywallState._adaptyService
+                                  .restorePurchases();
+
+                          // Останавливаем анимацию
+                          _pulseController.stop();
+
+                          if (success) {
+                            // Успех - хэптик фидбек
+                            HapticFeedback.mediumImpact();
+
+                            setState(() {
+                              isSuccess = true;
+                              isRestoring = false;
+                            });
+                          } else {
+                            // Ошибка - хэптик фидбек
+                            HapticFeedback.heavyImpact();
+
+                            setState(() {
+                              isRestoring = false;
+                            });
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('未找到可恢复的购买记录')),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          debugPrint(
+                            '[PaywallBody] Ошибка восстановления покупок: $e',
+                          );
+
+                          // Останавливаем анимацию и хэптик фидбек ошибки
+                          _pulseController.stop();
+                          HapticFeedback.heavyImpact();
+
+                          setState(() {
+                            isRestoring = false;
+                          });
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('恢复购买失败，请重试')),
+                            );
+                          }
+                        }
+                      },
+                      child: Text(
+                        '恢复购买',
+                        style: context.styles.mRegular.copyWith(
+                          color:
+                              isRestoring
+                                  ? Colors.grey
+                                  : const Color(0xFF6B73FF),
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 12.h),
+                    Zbutton(
+                      action: () async {
+                        if (products.isEmpty || isPurchasing || isRestoring)
+                          return;
+
+                        // Хэптик фидбек при нажатии
+                        HapticFeedback.lightImpact();
+
+                        setState(() {
+                          isPurchasing = true;
+                          purchaseStatusText = '正在连接支付系统...';
+                        });
+
+                        // Запускаем анимацию пульсации
+                        _pulseController.repeat(reverse: true);
+
+                        try {
+                          // Получаем выбранный продукт
+                          final selectedProduct = products[selectedPlanIndex];
+                          debugPrint(
+                            '[PaywallBody] Покупка продукта: ${selectedProduct.productId}',
+                          );
+
+                          // Обновляем статус
+                          setState(() {
+                            purchaseStatusText = '正在处理支付...';
+                          });
+
+                          // Активируем подписку
+                          final success = await _PaywallState._adaptyService
+                              .purchaseSubscription(selectedProduct.productId);
+
+                          // Останавливаем анимацию
+                          _pulseController.stop();
+
+                          if (success) {
+                            // Успех - хэптик фидбек
+                            HapticFeedback.mediumImpact();
+
+                            setState(() {
+                              isSuccess = true;
+                              isPurchasing = false;
+                            });
+                          } else {
+                            // Ошибка - хэптик фидбек
+                            HapticFeedback.heavyImpact();
+
+                            setState(() {
+                              isPurchasing = false;
+                            });
+                            // Показываем ошибку
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('购买失败，请重试')),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          debugPrint('[PaywallBody] Ошибка покупки: $e');
+
+                          // Останавливаем анимацию и хэптик фидбек ошибки
+                          _pulseController.stop();
+                          HapticFeedback.heavyImpact();
+
+                          setState(() {
+                            isPurchasing = false;
+                          });
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('购买失败，请重试')),
+                            );
+                          }
+                        }
+                      },
+                      isLoading: isPurchasing,
+                      isActive:
+                          !isLoading &&
+                          products.isNotEmpty &&
+                          !isPurchasing &&
+                          !isRestoring,
+                      text: isPurchasing ? '处理中...' : '立即更新',
+                      textColor: Colors.white,
+                    ),
+                    SizedBox(height: 20.h),
+                  ],
                 ),
-              ],
-            ),
-            SizedBox(
-              height: 114.h,
-              width: 111.w,
-              child: Image.asset('assets/heads.png'),
-            ),
-            SizedBox(height: 18.h),
-            Text('您的占卜已结束', style: context.styles.h2),
-            SizedBox(height: 6.h),
-            Text('升级VIP，畅享全部功能', style: context.styles.h2),
-            SizedBox(height: 24.h),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('要继续并了解更多：', style: context.styles.mRegular),
-                      SizedBox(height: 10.h),
-                      ..._buildAdvantages(),
-                      SizedBox(height: 32.h),
-                      ..._buildPlans(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 8.h),
-            Text(
-              '自动续订，可随时取消。\n条款和隐私政策。恢复购买',
-              style: context.styles.mDemilight.copyWith(
-                color: Colors.black,
-                height: 1.5,
               ),
-              textAlign: TextAlign.center,
             ),
-            SizedBox(height: 12.h),
-            Zbutton(
-              action: () async {
-                // Активируем подписку
-                await _PaywallState._adaptyService.activateSubscription();
-                setState(() {
-                  isSuccess = true;
-                });
-              },
-              isLoading: false,
-              isActive: true,
-              text: '立即更新',
-              textColor: Colors.white,
-            ),
-            SizedBox(height: 20.h),
-          ],
+          ),
         ),
-      ),
+        // Оверлей с индикатором загрузки
+        _buildLoadingOverlay(),
+      ],
     );
   }
 
@@ -240,25 +550,20 @@ class __PaywallBodyState extends State<_PaywallBody> {
   }
 
   List<Widget> _buildPlans() {
-    final plans = [
-      {
-        'title': '1个月',
-        'price': '¥18.9每月',
-        'description': '在1个月 ¥18.9 然后 ¥28',
-        'bonus:': '¥28',
-      },
-      {'title': '3个月', 'price': '¥58', 'description': '¥19.3每月'},
-      {'title': '1年', 'price': '¥138', 'description': '¥11.5每月'},
-    ];
-    return plans
+    return products
         .asMap()
         .entries
         .map(
           (entry) => _PlanCard(
-            plan: entry.value,
+            product: entry.value,
             isSelected: selectedPlanIndex == entry.key,
-            onTap: () => setState(() => selectedPlanIndex = entry.key),
-            needsBottomPadding: entry.key == plans.length - 1,
+            onTap:
+                () => setState(() {
+                  selectedPlanIndex = entry.key;
+                }),
+            needsBottomPadding: entry.key == products.length - 1,
+            isDisabled: isPurchasing || isRestoring,
+            hasDiscount: entry.value.isRecommended,
           ),
         )
         .toList();
@@ -267,32 +572,56 @@ class __PaywallBodyState extends State<_PaywallBody> {
 
 class _PlanCard extends StatelessWidget {
   const _PlanCard({
-    required this.plan,
+    required this.product,
     required this.isSelected,
     required this.onTap,
     required this.needsBottomPadding,
-    super.key,
+    required this.isDisabled,
+    required this.hasDiscount,
   });
-  final Map<String, String> plan;
+  final SubscriptionProduct product;
   final bool isSelected;
   final VoidCallback onTap;
   final bool needsBottomPadding;
-
+  final bool isDisabled;
+  final bool hasDiscount;
   @override
   Widget build(BuildContext context) {
-    final hasDiscount = plan['bonus:'] != null;
+    // final hasDiscount =
+    //     product.discountPercentage != null && product.discountPercentage! > 0;
 
     return Padding(
       padding: EdgeInsets.only(bottom: !needsBottomPadding ? 10.h : 0),
       child: InkWell(
-        onTap: onTap,
+        onTap:
+            isDisabled
+                ? null
+                : () {
+                  // Хэптик фидбек при выборе плана
+                  HapticFeedback.selectionClick();
+                  onTap();
+                },
         borderRadius: BorderRadius.circular(20.r),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           width: double.infinity,
-          // height: 80.h,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDisabled ? Colors.grey.shade100 : Colors.white,
             borderRadius: BorderRadius.circular(20.r),
+            border:
+                isSelected
+                    ? Border.all(color: const Color(0xFF6B73FF), width: 2)
+                    : null,
+            boxShadow:
+                isSelected
+                    ? [
+                      BoxShadow(
+                        color: const Color(0xFF6B73FF).withOpacity(0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                    : null,
           ),
           child: Stack(
             clipBehavior: Clip.none,
@@ -303,7 +632,8 @@ class _PlanCard extends StatelessWidget {
                 child: Row(
                   children: [
                     // Checkbox/иконка выбора
-                    Container(
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
                       width: 24.w,
                       height: 24.h,
                       decoration: BoxDecoration(
@@ -315,7 +645,9 @@ class _PlanCard extends StatelessWidget {
                           color:
                               isSelected
                                   ? const Color(0xFF6B73FF)
-                                  : Colors.grey.shade300,
+                                  : (isDisabled
+                                      ? Colors.grey.shade400
+                                      : Colors.grey.shade300),
                           width: 2,
                         ),
                         borderRadius: BorderRadius.circular(6.r),
@@ -337,49 +669,42 @@ class _PlanCard extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            plan['title'] ?? '',
-                            style: context.styles.h3.copyWith(
-                              fontWeight: FontWeight.w600,
+                            product.title,
+                            style: context.styles.mMedium.copyWith(
+                              // fontWeight: FontWeight.w600,
+                              // color: isDisabled ? Colors.grey.shade600 : null,
                             ),
                           ),
-                          SizedBox(height: 8.h),
-                          if (plan['description'] != null)
-                            Text(
-                              plan['description']!,
-                              style: context.styles.sDemilight.copyWith(
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
+                          SizedBox(height: 4.h),
+                          Text(
+                            product.description,
+                            style: context.styles.sDemilight.copyWith(),
+                          ),
                         ],
                       ),
                     ),
                     // Цена
                     Row(
-                      // crossAxisAlignment: CrossAxisAlignment.end,
-                      // mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (hasDiscount && plan['bonus:'] != null)
+                        if (hasDiscount && product.originalPrice != null) ...[
                           Text(
-                            plan['bonus:']!,
-                            style: context.styles.h3.copyWith(
-                              color: Colors.grey.shade400,
+                            product.originalPrice!,
+                            style: context.styles.mMedium.copyWith(
+                              color: ZColors.grayDark,
                               decoration: TextDecoration.lineThrough,
-                              fontWeight: FontWeight.w600,
+                              // fontWeight: FontWeight.w600,
                             ),
                           ),
-                        SizedBox(width: 4.w),
-                        Text(
-                          plan['price'] ?? '',
-                          style: context.styles.h3.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+
+                          SizedBox(width: 4.w),
+                        ],
+                        Text(product.price, style: context.styles.mMedium),
                       ],
                     ),
                   ],
                 ),
               ),
-              // Кнопка скидки для первого плана
+              // Кнопка скидки для продуктов со скидкой
               if (hasDiscount)
                 Positioned(
                   right: 143.w,
@@ -387,7 +712,6 @@ class _PlanCard extends StatelessWidget {
                   child: Container(
                     width: 50.w,
                     height: 25.h,
-                    // padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                     decoration: BoxDecoration(
                       color: const Color(0xFF6B73FF),
                       borderRadius: BorderRadius.circular(12.r),
@@ -395,7 +719,7 @@ class _PlanCard extends StatelessWidget {
                     child: Center(
                       child: Text(
                         '折扣',
-                        style: context.styles.mRegular.copyWith(
+                        style: context.styles.sDemilight.copyWith(
                           color: Colors.white,
                           height: 1.h,
                         ),

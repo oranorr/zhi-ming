@@ -5,6 +5,10 @@ import 'dart:math' as m show Random;
 
 class HomeLocalRepo {
   final _random = m.Random();
+
+  // Индекс для поочередного выбора цветов
+  int _colorIndex = 0;
+
   final List<String> _chineseChars = [
     '啊',
     '爱',
@@ -853,7 +857,10 @@ class HomeLocalRepo {
   List<QuestionEntity> get questions {
     List<QuestionEntity> generatedQuestions = [];
     for (int i = 0; i < 20; i++) {
-      final colorPair = _colorPairs[_random.nextInt(_colorPairs.length)];
+      // Получаем цветовую пару по порядку, циклически повторяя список
+      final colorPair = _colorPairs[_colorIndex % _colorPairs.length];
+      _colorIndex++; // Переходим к следующему цвету
+
       generatedQuestions.add(
         QuestionEntity(
           title: _generateRandomChineseString(2, 5),

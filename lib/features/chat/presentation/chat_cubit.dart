@@ -5,16 +5,20 @@ import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_orchestrator_service.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_validation_service.dart';
+import 'package:zhi_ming/features/history/data/chat_history_service.dart';
+import 'package:zhi_ming/features/iching/models/hexagram.dart';
 
 /// Оптимизированный ChatCubit с делегированием бизнес-логики в сервисы
 /// Фокусируется только на управлении состоянием и координации операций
 class ChatCubit extends HydratedCubit<ChatState> {
   ChatCubit() : super(const ChatState()) {
     _orchestratorService = ChatOrchestratorService();
+    _historyService = ChatHistoryService();
     _initializeServices();
   }
 
   late final ChatOrchestratorService _orchestratorService;
+  late final ChatHistoryService _historyService;
 
   /// Инициализация всех сервисов
   Future<void> _initializeServices() async {
@@ -185,6 +189,9 @@ class ChatCubit extends HydratedCubit<ChatState> {
           ),
         );
       }
+
+      // Сохраняем обновленный чат в историю
+      await _saveOrUpdateChatHistory();
     } else if (result.requiresPaywall) {
       _showErrorMessage(result.message);
       _navigateToPaywall();
@@ -230,12 +237,110 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
     // Обрабатываем результат
     if (result.isSuccess) {
-      _showHexagramResult(result);
+      await _showHexagramResult(result);
     } else if (result.requiresPaywall) {
       _showErrorMessage(result.message);
       _navigateToPaywall();
     } else {
       _showErrorMessage(result.message);
+    }
+  }
+
+  // ===============================================
+  // МЕТОДЫ РАБОТЫ С ИСТОРИЕЙ ЧАТОВ
+  // ===============================================
+
+  /// Создание или обновление чата в истории
+  Future<void> _saveOrUpdateChatHistory() async {
+    try {
+      debugPrint('[ChatCubit] Начинаем сохранение истории чата');
+
+      // Исключаем streaming сообщения
+      final filteredMessages =
+          state.messages.where((message) => !message.isStreaming).toList();
+
+      debugPrint('[ChatCubit] Всего сообщений: ${state.messages.length}');
+      debugPrint(
+        '[ChatCubit] Отфильтрованных сообщений: ${filteredMessages.length}',
+      );
+
+      if (filteredMessages.isEmpty) {
+        debugPrint('[ChatCubit] Нет сообщений для сохранения в истории');
+        return;
+      }
+
+      // НОВАЯ ПРОВЕРКА: Сохраняем только если есть успешная интерпретация
+      // Проверяем есть ли сообщения от бота (не пользователя)
+      final hasBotMessages = filteredMessages.any((message) => !message.isMe);
+
+      // Проверяем есть ли контекст гексаграммы (значит была успешная интерпретация)
+      // или есть ли сообщения с гексаграммами
+      final hasSuccessfulInterpretation =
+          state.hasHexagramContext ||
+          filteredMessages.any(
+            (message) =>
+                !message.isMe &&
+                (message.hexagrams?.isNotEmpty == true ||
+                    message.simpleInterpretation != null ||
+                    message.complexInterpretation != null),
+          );
+
+      if (!hasBotMessages || !hasSuccessfulInterpretation) {
+        debugPrint(
+          '[ChatCubit] Чат не содержит успешной интерпретации, пропускаем сохранение',
+        );
+        debugPrint(
+          '[ChatCubit] hasBotMessages: $hasBotMessages, hasSuccessfulInterpretation: $hasSuccessfulInterpretation',
+        );
+        return;
+      }
+
+      // Находим первое сообщение пользователя для заголовка
+      final userMessage = filteredMessages.firstWhere(
+        (message) => message.isMe,
+        orElse:
+            () => MessageEntity(
+              text: 'Вопрос пользователя',
+              isMe: true,
+              timestamp: DateTime.now(),
+            ),
+      );
+
+      debugPrint(
+        '[ChatCubit] Главный вопрос для заголовка: "${userMessage.text}"',
+      );
+      debugPrint('[ChatCubit] Текущий chatId: ${state.currentChatId}');
+
+      if (state.currentChatId == null) {
+        // Создаем новый чат
+        debugPrint('[ChatCubit] Создаем новый чат в истории');
+        final newChat = await _historyService.createChatFromUserMessage(
+          userMessage.text,
+          filteredMessages.reversed
+              .toList(), // Разворачиваем для правильного порядка
+        );
+
+        if (newChat != null) {
+          emit(state.copyWith(currentChatId: newChat.id));
+          debugPrint('[ChatCubit] ✅ Новый чат создан с ID: ${newChat.id}');
+        } else {
+          debugPrint('[ChatCubit] ❌ Не удалось создать новый чат');
+        }
+      } else {
+        // Обновляем существующий чат
+        debugPrint(
+          '[ChatCubit] Обновляем существующий чат: ${state.currentChatId}',
+        );
+        await _historyService.updateChatMessages(
+          state.currentChatId!,
+          filteredMessages.reversed
+              .toList(), // Разворачиваем для правильного порядка
+        );
+        debugPrint('[ChatCubit] ✅ Чат обновлен в истории');
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[ChatCubit] ❌ Ошибка сохранения истории чата: $e');
+      debugPrint('[ChatCubit] StackTrace: $stackTrace');
     }
   }
 
@@ -295,7 +400,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
   }
 
   /// Показ результата гексаграммы
-  void _showHexagramResult(ShakeProcessingResult result) {
+  Future<void> _showHexagramResult(ShakeProcessingResult result) async {
     debugPrint('[ChatCubit] Начинаем показ результата гексаграммы');
     debugPrint(
       '[ChatCubit] Состояние ДО обновления: isButtonAvailable = ${state.isButtonAvailable}, hasHexagramContext = ${state.hasHexagramContext}',
@@ -350,9 +455,6 @@ class ChatCubit extends HydratedCubit<ChatState> {
       );
     }
 
-    // ИСПРАВЛЕНИЕ: Убираем отдельный вызов _replaceLoadingMessage
-    // _replaceLoadingMessage(resultMessage);
-
     // Сохраняем контекст гадания
     final contextInterpretation = _extractInterpretationText(
       result.interpretationResult,
@@ -365,7 +467,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       interpretation: contextInterpretation,
     );
 
-    // ИСПРАВЛЕНИЕ: Объединяем обновление сообщений и установку контекста в один emit
+    // Объединяем обновление сообщений и установку контекста в один emit
     final updatedMessages = List<MessageEntity>.from(state.messages);
     if (state.loadingMessageIndex >= 0 &&
         state.loadingMessageIndex < updatedMessages.length) {
@@ -398,6 +500,9 @@ class ChatCubit extends HydratedCubit<ChatState> {
     debugPrint(
       '[ChatCubit] Текущее состояние: hasHexagramContext = ${state.hasHexagramContext}',
     );
+
+    // Сохраняем чат в историю после получения результата гексаграммы
+    await _saveOrUpdateChatHistory();
 
     // Добавляем пояснительное сообщение
     Future.delayed(const Duration(seconds: 1), () {
@@ -487,6 +592,9 @@ class ChatCubit extends HydratedCubit<ChatState> {
         isStreaming: false,
       );
       emit(state.copyWith(messages: updatedMessages));
+
+      // Сохраняем чат в историю после завершения streaming
+      _saveOrUpdateChatHistory();
     }
   }
 
@@ -547,6 +655,10 @@ class ChatCubit extends HydratedCubit<ChatState> {
   /// Очистка сообщений
   void clearMessages() {
     debugPrint('[ChatCubit] Очистка сообщений');
+
+    // Очищаем текущий чат ID в сервисе истории
+    _historyService.clearCurrentChat();
+
     emit(
       state.copyWith(
         messages: const [],
@@ -557,6 +669,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
         loadingMessageIndex: -1,
         currentQuestionContext: const [],
         clearLastHexagramContext: true,
+        clearCurrentChatId: true,
       ),
     );
   }
@@ -564,11 +677,16 @@ class ChatCubit extends HydratedCubit<ChatState> {
   /// Начало нового вопроса
   void startNewQuestion() {
     debugPrint('[ChatCubit] Начало нового вопроса');
+
+    // Очищаем текущий чат ID для создания нового чата
+    _historyService.clearCurrentChat();
+
     emit(
       state.copyWith(
         currentQuestionContext: const [],
         clearLastHexagramContext: true,
         isButtonAvailable: false,
+        clearCurrentChatId: true,
       ),
     );
   }
@@ -601,6 +719,9 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
     // Останавливаем все streaming
     _orchestratorService.stopAllStreaming();
+
+    // Очищаем текущий чат в истории
+    await _historyService.clearCurrentChat();
 
     // Сбрасываем состояние
     emit(const ChatState());

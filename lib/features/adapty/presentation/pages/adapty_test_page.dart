@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:zhi_ming/features/adapty/adapty.dart';
 import 'package:zhi_ming/features/adapty/presentation/widgets/subscription_status_widget.dart';
+import 'package:zhi_ming/features/adapty/data/repositories/adapty_repository_impl.dart';
 
 /// Страница для тестирования функциональности Adapty
 /// Позволяет проверить работу подписок и управления пользователями
@@ -34,12 +35,12 @@ class _AdaptyTestPageState extends State<AdaptyTestPage> {
         _productsError = null;
       });
 
-      if (!AdaptyService.instance.isInitialized) {
-        throw StateError('AdaptyService не инициализирован');
+      if (!AdaptyRepositoryImpl.instance.isInitialized) {
+        throw StateError('AdaptyRepository не инициализирован');
       }
 
       final products =
-          await AdaptyService.instance.repository.getAvailableProducts();
+          await AdaptyRepositoryImpl.instance.getAvailableProducts();
 
       if (mounted) {
         setState(() {
@@ -64,11 +65,11 @@ class _AdaptyTestPageState extends State<AdaptyTestPage> {
         _isLoadingUserId = true;
       });
 
-      if (!AdaptyService.instance.isInitialized) {
+      if (!AdaptyRepositoryImpl.instance.isInitialized) {
         return;
       }
 
-      final userId = await AdaptyService.instance.repository.getUserId();
+      final userId = await AdaptyRepositoryImpl.instance.getUserId();
 
       if (mounted) {
         setState(() {
@@ -85,23 +86,21 @@ class _AdaptyTestPageState extends State<AdaptyTestPage> {
     }
   }
 
-  /// Тестирование уменьшения бесплатных запросов
-  Future<void> _testDecrementFreeRequests() async {
+  /// Тест уменьшения счетчика бесплатных запросов
+  Future<void> _testDecrementRequests() async {
     try {
-      if (!AdaptyService.instance.isInitialized) {
-        throw StateError('AdaptyService не инициализирован');
+      if (!AdaptyRepositoryImpl.instance.isInitialized) {
+        throw StateError('AdaptyRepository не инициализирован');
       }
 
-      await AdaptyService.instance.repository.decrementFreeRequests();
+      await AdaptyRepositoryImpl.instance.decrementFreeRequests();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Бесплатный запрос использован'),
-            backgroundColor: Colors.green,
-          ),
+          const SnackBar(content: Text('Счетчик бесплатных запросов уменьшен')),
         );
-        // Обновляем статус подписки
+
+        // Обновляем виджет статуса
         setState(() {});
       }
     } catch (e) {
@@ -113,28 +112,28 @@ class _AdaptyTestPageState extends State<AdaptyTestPage> {
     }
   }
 
-  /// Тестирование восстановления покупок
+  /// Тест восстановления покупок
   Future<void> _testRestorePurchases() async {
     try {
-      if (!AdaptyService.instance.isInitialized) {
-        throw StateError('AdaptyService не инициализирован');
+      if (!AdaptyRepositoryImpl.instance.isInitialized) {
+        throw StateError('AdaptyRepository не инициализирован');
       }
 
-      final restored =
-          await AdaptyService.instance.repository.restorePurchases();
+      final success = await AdaptyRepositoryImpl.instance.restorePurchases();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              restored
+              success
                   ? 'Покупки успешно восстановлены'
                   : 'Активные покупки не найдены',
             ),
-            backgroundColor: restored ? Colors.green : Colors.orange,
+            backgroundColor: success ? Colors.green : Colors.orange,
           ),
         );
-        // Обновляем статус подписки
+
+        // Обновляем виджет статуса
         setState(() {});
       }
     } catch (e) {
@@ -337,7 +336,7 @@ class _AdaptyTestPageState extends State<AdaptyTestPage> {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _testDecrementFreeRequests,
+                        onPressed: _testDecrementRequests,
                         icon: const Icon(Icons.remove_circle),
                         label: const Text('Использовать бесплатный запрос'),
                         style: ElevatedButton.styleFrom(

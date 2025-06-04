@@ -3,7 +3,7 @@ import 'package:hydrated_bloc/hydrated_bloc.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:adapty_flutter/adapty_flutter.dart';
 import 'package:zhi_ming/app.dart';
-import 'package:zhi_ming/features/adapty/adapty.dart';
+import 'package:zhi_ming/features/adapty/data/repositories/adapty_repository_impl.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,9 +19,9 @@ void main() async {
     );
     debugPrint('[main] Adapty SDK успешно активирован');
 
-    // Инициализация нашего сервиса Adapty
-    await AdaptyService.instance.initialize();
-    debugPrint('[main] AdaptyService успешно инициализирован');
+    // Инициализация нашего репозитория Adapty
+    await AdaptyRepositoryImpl.instance.initialize();
+    debugPrint('[main] AdaptyRepository успешно инициализирован');
   } catch (e) {
     debugPrint('[main] Ошибка инициализации Adapty: $e');
   }

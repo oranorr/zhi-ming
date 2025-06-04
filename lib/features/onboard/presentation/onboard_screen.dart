@@ -29,7 +29,6 @@ class _OnboardScreenState extends State<OnboardScreen> with OnboardMixin {
       },
       builder: (context, state) {
         return ZScaffold(
-          isHome: false,
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(

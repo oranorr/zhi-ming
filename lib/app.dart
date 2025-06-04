@@ -2,11 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zhi_ming/core/services/user_service.dart';
 import 'package:zhi_ming/core/theme/themes.dart';
-import 'package:zhi_ming/features/adapty/presentation/paywall.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
-import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_screen.dart';
 
@@ -18,8 +17,8 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> {
-  // Константа для ключа в SharedPreferences
-  static const String _onboardingCompletedKey = 'onboarding_completed';
+  // Сервис для работы с профилем пользователя
+  final UserService _userService = UserService();
 
   // Флаг, указывающий на прохождение онбординга
   bool _onboardingCompleted = false;
@@ -33,53 +32,45 @@ class _AppState extends State<App> {
     unawaited(_checkOnboardingStatus());
   }
 
-  /// Проверяет, был ли пройден онбординг
+  /// Проверяет, был ли пройден онбординг и загружает профиль пользователя
   Future<void> _checkOnboardingStatus() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final onboardingCompleted =
-          prefs.getBool(_onboardingCompletedKey) ?? false;
+      print(
+        '[App] Проверка статуса онбординга и загрузка профиля пользователя',
+      );
+
+      // Проверяем статус онбординга через UserService
+      final onboardingCompleted = await _userService.isOnboardingCompleted();
+
+      // Если онбординг завершен, предзагружаем профиль пользователя
+      if (onboardingCompleted) {
+        final profile = await _userService.getUserProfile();
+        if (profile != null) {
+          print('[App] Профиль пользователя загружен: ${profile.name}');
+          print(
+            '[App] Краткая информация: ${await _userService.getUserSummary()}',
+          );
+        } else {
+          print('[App] Онбординг завершен, но профиль пользователя не найден');
+        }
+      }
 
       setState(() {
         _onboardingCompleted = onboardingCompleted;
         _isInitializing = false;
       });
+
+      print(
+        '[App] Статус онбординга: ${onboardingCompleted ? "завершен" : "не завершен"}',
+      );
     } on Exception catch (e) {
-      debugPrint('Ошибка при проверке статуса онбординга: $e');
+      debugPrint('[App] Ошибка при проверке статуса онбординга: $e');
       setState(() {
         _onboardingCompleted = false;
         _isInitializing = false;
       });
     }
   }
-
-  // void _setupRouterListener() {
-  //   _routerConfig.routeInformationProvider.addListener(() {
-  //     // Получаем текущую локацию
-  //     final String currentPath = appNavigationService.currentPath;
-  //     final String? currentScreenName = _extractScreenName(currentPath);
-
-  //     if (currentScreenName != null) {
-  //       // Логируем просмотр экрана
-  //       analytics.logScreenView(
-  //         screenName: currentScreenName,
-  //         screenClass: currentScreenName,
-  //       );
-  //     }
-  //   });
-  // }
-
-  // String? _extractScreenName(String path) {
-  //   // Удаляем параметры URL и получаем название экрана
-  //   final uri = Uri.parse(path);
-  //   final cleanPath = uri.path;
-
-  //   // Возвращаем последний сегмент пути как название экрана
-  //   // Или первый сегмент, если путь состоит только из одного сегмента
-  //   final segments = cleanPath.split('/').where((s) => s.isNotEmpty).toList();
-  //   if (segments.isEmpty) return 'Home';
-  //   return segments.last;
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -92,18 +83,18 @@ class _AppState extends State<App> {
             BlocProvider(create: (_) => OnboardCubit()),
           ],
           child: MaterialApp(
-            title: 'Pivot App',
+            title: 'Zhi Ming',
             theme: AppTheme.light(),
             themeMode: ThemeMode.light,
             home:
                 // const _LoadingScreen(),
-                const Paywall(),
-            // _isInitializing
-            //     ? const _LoadingScreen() // Экран загрузки пока проверяем статус
-            //     // : !kDebugMode
-            //     : _onboardingCompleted
-            //     ? const HomePage() // Если онбординг пройден, показываем главную страницу
-            //     : const OnboardScreen(), // Иначе показываем экран онбординга
+                // const Paywall(),
+                _isInitializing
+                    ? const _LoadingScreen() // Экран загрузки пока проверяем статус
+                    // : !kDebugMode
+                    : _onboardingCompleted
+                    ? const HomeScreen() // Если онбординг пройден, показываем главную страницу
+                    : const OnboardScreen(), // Иначе показываем экран онбординга
             // routerConfig: _routerConfig,
             // scaffoldMessengerKey: scaffoldKey,
           ),

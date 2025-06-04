@@ -1,32 +1,34 @@
 import 'package:flutter/foundation.dart';
-import 'package:zhi_ming/core/services/adapty/adapty_service.dart';
-import 'package:zhi_ming/core/services/adapty/adapty_service_impl.dart';
+import 'package:zhi_ming/features/adapty/domain/repositories/adapty_repository.dart';
+import 'package:zhi_ming/features/adapty/data/repositories/adapty_repository_impl.dart';
 
 /// Сервис для управления подпиской и лимитами запросов
 /// Отвечает за проверку доступности запросов, обновление счетчиков и статуса подписки
 class ChatSubscriptionService {
   ChatSubscriptionService() {
-    _adaptyService = AdaptyServiceImpl();
+    _adaptyRepository = AdaptyRepositoryImpl.instance;
   }
 
-  late final AdaptyService _adaptyService;
+  late final AdaptyRepository _adaptyRepository;
 
   /// Инициализация сервиса
   Future<void> initialize() async {
     debugPrint('[ChatSubscriptionService] Инициализация сервиса подписки');
-    await _adaptyService.init();
+    await _adaptyRepository.initialize();
   }
 
   /// Проверка активности подписки
   Future<bool> hasActiveSubscription() async {
-    final hasSubscription = await _adaptyService.hasActiveSubscription();
+    final subscriptionStatus = await _adaptyRepository.getSubscriptionStatus();
+    final hasSubscription = subscriptionStatus.hasPremiumAccess;
     debugPrint('[ChatSubscriptionService] Активная подписка: $hasSubscription');
     return hasSubscription;
   }
 
   /// Получение количества оставшихся бесплатных запросов
   Future<int> getRemainingFreeRequests() async {
-    final remainingRequests = await _adaptyService.getRemainingFreeRequests();
+    final subscriptionStatus = await _adaptyRepository.getSubscriptionStatus();
+    final remainingRequests = subscriptionStatus.remainingFreeRequests;
     debugPrint(
       '[ChatSubscriptionService] Оставшиеся бесплатные запросы: $remainingRequests',
     );
@@ -35,17 +37,17 @@ class ChatSubscriptionService {
 
   /// Проверка возможности выполнения запроса
   Future<bool> canMakeRequest() async {
-    final canMake = await _adaptyService.canMakeRequest();
+    final canMake = await _adaptyRepository.canMakeRequest();
     debugPrint('[ChatSubscriptionService] Может ли сделать запрос: $canMake');
     return canMake;
   }
 
   /// Уменьшение счетчика бесплатных запросов
   Future<void> decrementFreeRequests() async {
+    await _adaptyRepository.decrementFreeRequests();
     debugPrint(
-      '[ChatSubscriptionService] Уменьшаем счетчик бесплатных запросов',
+      '[ChatSubscriptionService] Счетчик бесплатных запросов уменьшен',
     );
-    await _adaptyService.decrementFreeRequests();
   }
 
   /// Получение данных о статусе подписки

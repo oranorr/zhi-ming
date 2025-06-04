@@ -1,26 +1,145 @@
 import 'package:adapty_flutter/adapty_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:io';
 import 'package:zhi_ming/features/adapty/domain/models/subscription_product.dart';
 import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
 import 'package:zhi_ming/features/adapty/domain/repositories/adapty_repository.dart';
 
 /// Реализация репозитория для работы с Adapty SDK
 /// Интегрирует все функции Adapty для управления подписками
+/// Кэширует продукты для быстрого доступа без повторной загрузки
 class AdaptyRepositoryImpl implements AdaptyRepository {
+  // Singleton pattern
+  AdaptyRepositoryImpl._();
+  static AdaptyRepositoryImpl? _instance;
+  static AdaptyRepositoryImpl get instance =>
+      _instance ??= AdaptyRepositoryImpl._();
+
   static const _storage = FlutterSecureStorage();
 
   // Ключи для локального хранения
   static const String _freeRequestsCountKey = 'free_requests_count';
   static const String _subscriptionStatusKey = 'subscription_status';
+  static const String _emulatorSubscriptionKey =
+      'emulator_subscription_active'; // [AdaptyRepositoryImpl] Ключ для хранения фейковой подписки на эмуляторе
+  static const String _emulatorSubscriptionProductKey =
+      'emulator_subscription_product'; // [AdaptyRepositoryImpl] Ключ для хранения ID купленного продукта на эмуляторе
+  static const String _emulatorSubscriptionDateKey =
+      'emulator_subscription_date'; // [AdaptyRepositoryImpl] Ключ для хранения даты покупки на эмуляторе
   static const String _paywallPlacementId = 'zhi-ming-placement';
 
   // Константы
   static const int _maxFreeRequests = kDebugMode ? 5 : 20;
   static const String _premiumAccessLevel = 'premium';
 
+  bool _isInitialized = false;
+
+  // [AdaptyRepositoryImpl] Кэш для хранения предзагруженных продуктов
+  List<SubscriptionProduct> _cachedProducts = [];
+  bool _productsLoaded = false;
+
+  /// Проверка, работает ли приложение на эмуляторе
+  /// [AdaptyRepositoryImpl] Определяем эмулятор для Android и iOS
+  bool get _isRunningOnEmulator {
+    try {
+      if (Platform.isAndroid) {
+        // [AdaptyRepositoryImpl] Android эмулятор определяется по переменным окружения и системным свойствам
+        final isEmulator =
+            Platform.environment.containsKey('ANDROID_EMULATOR') ||
+            Platform.environment['ANDROID_EMULATOR'] == 'true';
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖 Android эмулятор проверка: $isEmulator',
+        );
+        return isEmulator;
+      } else if (Platform.isIOS) {
+        // [AdaptyRepositoryImpl] iOS симулятор определяется ТОЛЬКО по переменным симулятора
+        final hasSimulatorEnv =
+            Platform.environment.containsKey('SIMULATOR_DEVICE_NAME') ||
+            Platform.environment['SIMULATOR_DEVICE_NAME'] != null;
+
+        // [AdaptyRepositoryImpl] Дополнительная проверка через другие переменные симулятора
+        final hasSimulatorRoot = Platform.environment.containsKey(
+          'SIMULATOR_ROOT',
+        );
+        final hasSimulatorUdid = Platform.environment.containsKey(
+          'SIMULATOR_UDID',
+        );
+
+        // [AdaptyRepositoryImpl] Проверяем переменную IPHONE_SIMULATOR_ROOT (старые версии Xcode)
+        final hasLegacySimulatorRoot = Platform.environment.containsKey(
+          'IPHONE_SIMULATOR_ROOT',
+        );
+
+        // [AdaptyRepositoryImpl] НЕ используем kDebugMode для определения симулятора!
+        // Реальные устройства могут работать в debug режиме
+        final isSimulator =
+            hasSimulatorEnv ||
+            hasSimulatorRoot ||
+            hasSimulatorUdid ||
+            hasLegacySimulatorRoot;
+
+        debugPrint('[AdaptyRepositoryImpl] 🤖 iOS симулятор проверки:');
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖   SIMULATOR_DEVICE_NAME: $hasSimulatorEnv',
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖   SIMULATOR_ROOT: $hasSimulatorRoot',
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖   SIMULATOR_UDID: $hasSimulatorUdid',
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖   IPHONE_SIMULATOR_ROOT: $hasLegacySimulatorRoot',
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖   kDebugMode: $kDebugMode (НЕ используется для определения)',
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖   Итоговый результат: $isSimulator',
+        );
+
+        return isSimulator;
+      }
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🤖 Неизвестная платформа, считаем НЕ эмулятором',
+      );
+      return false;
+    } catch (e) {
+      // [AdaptyRepositoryImpl] В случае ошибки считаем что НЕ эмулятор
+      debugPrint('[AdaptyRepositoryImpl] Ошибка определения эмулятора: $e');
+      return false;
+    }
+  }
+
+  /// Проверка, инициализирован ли репозиторий
+  bool get isInitialized => _isInitialized;
+
+  /// Проверка, загружены ли продукты в кэш
+  /// [AdaptyRepositoryImpl] Публичный геттер для проверки состояния загрузки продуктов
+  bool get areProductsLoaded => _productsLoaded;
+
+  /// Получение кэшированных продуктов без сетевого запроса
+  /// [AdaptyRepositoryImpl] Быстрый доступ к предзагруженным продуктам для UI
+  List<SubscriptionProduct> get cachedProducts =>
+      List.unmodifiable(_cachedProducts);
+
+  /// Сброс состояния репозитория (для тестирования)
+  @visibleForTesting
+  void reset() {
+    _isInitialized = false;
+    _productsLoaded = false;
+    _cachedProducts.clear();
+    _instance = null;
+  }
+
   @override
   Future<void> initialize() async {
+    if (_isInitialized) {
+      debugPrint('[AdaptyRepositoryImpl] Adapty уже инициализирован');
+      return;
+    }
+
     try {
       debugPrint('[AdaptyRepositoryImpl] Инициализация репозитория...');
 
@@ -41,6 +160,10 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         }
       }
 
+      // [AdaptyRepositoryImpl] Предзагружаем продукты при инициализации
+      await _preloadProducts();
+
+      _isInitialized = true;
       debugPrint('[AdaptyRepositoryImpl] Репозиторий успешно инициализирован');
     } catch (e) {
       debugPrint('[AdaptyRepositoryImpl] Ошибка инициализации репозитория: $e');
@@ -48,10 +171,169 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
     }
   }
 
+  /// Предзагрузка продуктов при инициализации репозитория
+  /// [AdaptyRepositoryImpl] Загружает продукты один раз при старте приложения
+  Future<void> _preloadProducts() async {
+    if (_productsLoaded) {
+      debugPrint('[AdaptyRepositoryImpl] Продукты уже загружены в кэш');
+      return;
+    }
+
+    try {
+      debugPrint('[AdaptyRepositoryImpl] 🚀 Предзагрузка продуктов...');
+
+      // [AdaptyRepositoryImpl] Загружаем продукты и сохраняем в кэш
+      final products = await _fetchProductsFromAdapty();
+      _cachedProducts = products;
+      _productsLoaded = true;
+
+      debugPrint(
+        '[AdaptyRepositoryImpl] ✅ Предзагружено ${_cachedProducts.length} продуктов в кэш',
+      );
+    } catch (e) {
+      debugPrint('[AdaptyRepositoryImpl] ❌ Ошибка предзагрузки продуктов: $e');
+
+      // [AdaptyRepositoryImpl] В случае ошибки используем mock продукты
+      _cachedProducts = _getMockProducts();
+      _productsLoaded = true;
+
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🔄 Использованы mock продукты: ${_cachedProducts.length}',
+      );
+    }
+  }
+
+  /// Принудительное обновление кэша продуктов
+  /// [AdaptyRepositoryImpl] Метод для обновления продуктов по требованию
+  @override
+  Future<void> refreshProducts() async {
+    try {
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🔄 Принудительное обновление продуктов...',
+      );
+
+      final products = await _fetchProductsFromAdapty();
+      _cachedProducts = products;
+
+      debugPrint(
+        '[AdaptyRepositoryImpl] ✅ Кэш продуктов обновлен: ${_cachedProducts.length}',
+      );
+    } catch (e) {
+      debugPrint('[AdaptyRepositoryImpl] ❌ Ошибка обновления продуктов: $e');
+      // [AdaptyRepositoryImpl] Оставляем старый кэш при ошибке
+    }
+  }
+
+  /// Загрузка продуктов непосредственно из Adapty
+  /// [AdaptyRepositoryImpl] Приватный метод для получения продуктов из Adapty SDK
+  Future<List<SubscriptionProduct>> _fetchProductsFromAdapty() async {
+    debugPrint('[AdaptyRepositoryImpl] Получение продуктов из Adapty...');
+    debugPrint(
+      '[AdaptyRepositoryImpl] Используется placement ID: $_paywallPlacementId',
+    );
+
+    // Получаем paywall с продуктами
+    final paywall = await Adapty().getPaywall(placementId: _paywallPlacementId);
+
+    debugPrint(
+      '[AdaptyRepositoryImpl] Paywall получен: ${paywall.placementId}',
+    );
+    debugPrint('[AdaptyRepositoryImpl] Paywall revision: ${paywall.revision}');
+
+    final products = await Adapty().getPaywallProducts(paywall: paywall);
+
+    debugPrint(
+      '[AdaptyRepositoryImpl] Получено ${products.length} сырых продуктов от Adapty',
+    );
+
+    if (products.isEmpty) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] ⚠️ Paywall не содержит продуктов! Проверьте настройки в Adapty Dashboard',
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📋 Placement ID: $_paywallPlacementId',
+      );
+      debugPrint('[AdaptyRepositoryImpl] 🔄 Revision: ${paywall.revision}');
+    }
+
+    final subscriptionProducts = <SubscriptionProduct>[];
+
+    for (final product in products) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Обработка продукта: ${product.vendorProductId}',
+      );
+      final subscriptionProduct = _mapAdaptyProductToSubscriptionProduct(
+        product,
+      );
+      if (subscriptionProduct != null) {
+        subscriptionProducts.add(subscriptionProduct);
+        debugPrint(
+          '[AdaptyRepositoryImpl] ✅ Продукт успешно добавлен: ${subscriptionProduct.title}',
+        );
+      } else {
+        debugPrint(
+          '[AdaptyRepositoryImpl] ❌ Продукт не удалось преобразовать: ${product.vendorProductId}',
+        );
+      }
+    }
+
+    debugPrint(
+      '[AdaptyRepositoryImpl] Итого найдено ${subscriptionProducts.length} продуктов',
+    );
+    return subscriptionProducts;
+  }
+
+  @override
+  Future<List<SubscriptionProduct>> getAvailableProducts() async {
+    // [AdaptyRepositoryImpl] Теперь просто возвращаем кэшированные продукты
+    if (!_productsLoaded) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] ⚠️ Продукты еще не загружены, выполняем загрузку...',
+      );
+      await _preloadProducts();
+    }
+
+    debugPrint(
+      '[AdaptyRepositoryImpl] 📦 Возвращаем ${_cachedProducts.length} кэшированных продуктов',
+    );
+    return List.from(_cachedProducts);
+  }
+
   @override
   Future<SubscriptionStatus> getSubscriptionStatus() async {
     try {
       debugPrint('[AdaptyRepositoryImpl] Получение статуса подписки...');
+
+      // [AdaptyRepositoryImpl] Проверяем фейковую подписку на эмуляторе в первую очередь
+      if (_isRunningOnEmulator) {
+        final emulatorSubscriptionActive = await _storage.read(
+          key: _emulatorSubscriptionKey,
+        );
+        if (emulatorSubscriptionActive == 'true') {
+          final productId =
+              await _storage.read(key: _emulatorSubscriptionProductKey) ??
+              'emulator_premium';
+          final dateString = await _storage.read(
+            key: _emulatorSubscriptionDateKey,
+          );
+          final purchaseDate =
+              dateString != null
+                  ? DateTime.tryParse(dateString)
+                  : DateTime.now();
+
+          debugPrint(
+            '[AdaptyRepositoryImpl] 🤖 Найдена активная ФЕЙКОВАЯ подписка на эмуляторе: $productId',
+          );
+
+          // [AdaptyRepositoryImpl] Возвращаем premium статус с датой истечения через год от покупки
+          return SubscriptionStatus.premium(
+            expirationDate: (purchaseDate ?? DateTime.now()).add(
+              const Duration(days: 365),
+            ),
+            subscriptionType: _getEmulatorSubscriptionType(productId),
+          );
+        }
+      }
 
       // Получаем информацию о подписке из Adapty
       final profile = await Adapty().getProfile();
@@ -85,6 +367,26 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         '[AdaptyRepositoryImpl] Ошибка получения статуса подписки: $e',
       );
 
+      // [AdaptyRepositoryImpl] В случае ошибки на эмуляторе все равно проверяем фейковую подписку
+      if (_isRunningOnEmulator) {
+        final emulatorSubscriptionActive = await _storage.read(
+          key: _emulatorSubscriptionKey,
+        );
+        if (emulatorSubscriptionActive == 'true') {
+          final productId =
+              await _storage.read(key: _emulatorSubscriptionProductKey) ??
+              'emulator_premium';
+          debugPrint(
+            '[AdaptyRepositoryImpl] 🤖 Используем фейковую подписку на эмуляторе при ошибке: $productId',
+          );
+
+          return SubscriptionStatus.premium(
+            expirationDate: DateTime.now().add(const Duration(days: 365)),
+            subscriptionType: _getEmulatorSubscriptionType(productId),
+          );
+        }
+      }
+
       // В случае ошибки возвращаем статус бесплатного пользователя
       final remainingFreeRequests = await _getRemainingFreeRequests();
       return SubscriptionStatus.free(
@@ -95,79 +397,55 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
   }
 
   @override
-  Future<List<SubscriptionProduct>> getAvailableProducts() async {
-    try {
-      debugPrint('[AdaptyRepositoryImpl] Получение доступных продуктов...');
-      debugPrint(
-        '[AdaptyRepositoryImpl] Используется placement ID: $_paywallPlacementId',
-      );
-
-      // Получаем paywall с продуктами
-      final paywall = await Adapty().getPaywall(
-        placementId: _paywallPlacementId,
-      );
-
-      debugPrint(
-        '[AdaptyRepositoryImpl] Paywall получен: ${paywall.placementId}',
-      );
-      debugPrint(
-        '[AdaptyRepositoryImpl] Paywall revision: ${paywall.revision}',
-      );
-
-      final products = await Adapty().getPaywallProducts(paywall: paywall);
-
-      debugPrint(
-        '[AdaptyRepositoryImpl] Получено ${products.length} сырых продуктов от Adapty',
-      );
-
-      if (products.isEmpty) {
-        debugPrint(
-          '[AdaptyRepositoryImpl] ⚠️ Paywall не содержит продуктов! Проверьте настройки в Adapty Dashboard',
-        );
-        debugPrint(
-          '[AdaptyRepositoryImpl] 📋 Placement ID: $_paywallPlacementId',
-        );
-        debugPrint('[AdaptyRepositoryImpl] 🔄 Revision: ${paywall.revision}');
-      }
-
-      final subscriptionProducts = <SubscriptionProduct>[];
-
-      for (final product in products) {
-        debugPrint(
-          '[AdaptyRepositoryImpl] Обработка продукта: ${product.vendorProductId}',
-        );
-        final subscriptionProduct = _mapAdaptyProductToSubscriptionProduct(
-          product,
-        );
-        if (subscriptionProduct != null) {
-          subscriptionProducts.add(subscriptionProduct);
-          debugPrint(
-            '[AdaptyRepositoryImpl] ✅ Продукт успешно добавлен: ${subscriptionProduct.title}',
-          );
-        } else {
-          debugPrint(
-            '[AdaptyRepositoryImpl] ❌ Продукт не удалось преобразовать: ${product.vendorProductId}',
-          );
-        }
-      }
-
-      debugPrint(
-        '[AdaptyRepositoryImpl] Итого найдено ${subscriptionProducts.length} продуктов',
-      );
-      return subscriptionProducts;
-    } on Exception catch (e) {
-      debugPrint('[AdaptyRepositoryImpl] Ошибка получения продуктов: $e');
-
-      // Возвращаем заглушки для тестирования
-      debugPrint('[AdaptyRepositoryImpl] 🔄 Возвращаем mock продукты');
-      return _getMockProducts();
-    }
-  }
-
-  @override
   Future<bool> purchaseSubscription(String productId) async {
     try {
       debugPrint('[AdaptyRepositoryImpl] Покупка подписки: $productId');
+      debugPrint('[AdaptyRepositoryImpl] 🔍 Проверка эмулятора...');
+
+      final isEmulator = _isRunningOnEmulator;
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🔍 Результат проверки эмулятора: $isEmulator',
+      );
+      debugPrint('[AdaptyRepositoryImpl] 🔍 Platform.isIOS: ${Platform.isIOS}');
+      debugPrint('[AdaptyRepositoryImpl] 🔍 kDebugMode: $kDebugMode');
+
+      // [AdaptyRepositoryImpl] Имитация покупки на эмуляторе - сразу "покупаем" без обращения к Adapty
+      if (isEmulator) {
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖 ЭМУЛЯТОР: Имитируем успешную покупку подписки: $productId',
+        );
+
+        // [AdaptyRepositoryImpl] Сохраняем информацию о "купленной" подписке
+        await _storage.write(key: _emulatorSubscriptionKey, value: 'true');
+        await _storage.write(
+          key: _emulatorSubscriptionProductKey,
+          value: productId,
+        );
+        await _storage.write(
+          key: _emulatorSubscriptionDateKey,
+          value: DateTime.now().toIso8601String(),
+        );
+
+        // [AdaptyRepositoryImpl] Трекаем событие фейковой покупки
+        await _trackPurchaseEvent(productId);
+        await trackEvent(
+          'emulator_fake_purchase',
+          parameters: {
+            'product_id': productId,
+            'timestamp': DateTime.now().toIso8601String(),
+            'platform': Platform.operatingSystem,
+          },
+        );
+
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖 ЭМУЛЯТОР: Фейковая покупка успешно сохранена!',
+        );
+        return true;
+      }
+
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📱 РЕАЛЬНОЕ УСТРОЙСТВО: Выполняем реальную покупку через Adapty',
+      );
 
       // Получаем paywall и продукты
       final paywall = await Adapty().getPaywall(
@@ -418,6 +696,16 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         value: _maxFreeRequests.toString(),
       );
 
+      // [AdaptyRepositoryImpl] Очищаем фейковую подписку на эмуляторе
+      if (_isRunningOnEmulator) {
+        await _storage.delete(key: _emulatorSubscriptionKey);
+        await _storage.delete(key: _emulatorSubscriptionProductKey);
+        await _storage.delete(key: _emulatorSubscriptionDateKey);
+        debugPrint(
+          '[AdaptyRepositoryImpl] 🤖 ЭМУЛЯТОР: Фейковая подписка очищена при выходе',
+        );
+      }
+
       debugPrint('[AdaptyRepositoryImpl] Пользователь вышел из системы');
     } on Exception catch (e) {
       debugPrint('[AdaptyRepositoryImpl] Ошибка выхода: $e');
@@ -444,6 +732,23 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
     // Логика определения типа подписки на основе данных Adapty
     // Можно использовать vendorProductId или другие поля
     return 'premium'; // Заглушка
+  }
+
+  /// Определение типа подписки для эмулятора по product ID
+  /// [AdaptyRepositoryImpl] Маппинг product ID в читаемый тип подписки для эмулятора
+  String _getEmulatorSubscriptionType(String productId) {
+    if (productId.toLowerCase().contains('one_month') ||
+        productId.toLowerCase().contains('monthly')) {
+      return 'monthly';
+    } else if (productId.toLowerCase().contains('three_months') ||
+        productId.toLowerCase().contains('quarterly')) {
+      return 'quarterly';
+    } else if (productId.toLowerCase().contains('annual') ||
+        productId.toLowerCase().contains('yearly')) {
+      return 'yearly';
+    } else {
+      return 'premium'; // [AdaptyRepositoryImpl] Дефолтный тип для неизвестных продуктов
+    }
   }
 
   /// Маппинг продукта Adapty в нашу модель
@@ -622,5 +927,31 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         'timestamp': DateTime.now().toIso8601String(),
       },
     );
+  }
+
+  /// Очистка фейковой подписки на эмуляторе (для тестирования)
+  /// [AdaptyRepositoryImpl] Метод для ручного сброса подписки на эмуляторе
+  @visibleForTesting
+  Future<void> clearEmulatorSubscription() async {
+    if (_isRunningOnEmulator) {
+      await _storage.delete(key: _emulatorSubscriptionKey);
+      await _storage.delete(key: _emulatorSubscriptionProductKey);
+      await _storage.delete(key: _emulatorSubscriptionDateKey);
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🤖 ЭМУЛЯТОР: Фейковая подписка очищена вручную',
+      );
+
+      await trackEvent(
+        'emulator_subscription_cleared',
+        parameters: {
+          'timestamp': DateTime.now().toIso8601String(),
+          'platform': Platform.operatingSystem,
+        },
+      );
+    } else {
+      debugPrint(
+        '[AdaptyRepositoryImpl] ⚠️ Попытка очистить фейковую подписку не на эмуляторе',
+      );
+    }
   }
 }

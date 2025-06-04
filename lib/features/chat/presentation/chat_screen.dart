@@ -15,9 +15,9 @@ import 'package:zhi_ming/features/adapty/presentation/paywall.dart';
 import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
-import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
 import 'package:zhi_ming/features/chat/presentation/input_send.dart';
-import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
+import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 import 'package:zhi_ming/features/iching/widgets/hexagram_widget.dart';
 import 'package:zhi_ming/features/iching/widgets/iching_shake_popup.dart';
 
@@ -47,20 +47,67 @@ class _ChatScreenState extends State<ChatScreen> {
     // Добавляем слушатель прокрутки для закрытия клавиатуры
     _scrollController.addListener(_onScroll);
 
-    // Показываем начальное сообщение от бота при открытии чата
+    // Инициализация зависит от типа entrypoint
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      cubit.showInitialMessage();
+      if (widget.entrypoint is HistoryEntrypointEntity) {
+        // Режим истории - загружаем сообщения из истории
+        _loadHistoryMessages();
+      } else {
+        // Обычный режим - показываем начальное сообщение от бота
+        cubit.showInitialMessage();
 
-      // Проверяем наличие предварительно заданного вопроса
-      final predefinedQuestion = widget.entrypoint.predefinedQuestion;
-      if (predefinedQuestion != null && predefinedQuestion.isNotEmpty) {
-        // Устанавливаем предварительно заданный вопрос в поле ввода
-        cubit.updateInput(predefinedQuestion);
+        // Проверяем наличие предварительно заданного вопроса
+        final predefinedQuestion = widget.entrypoint.predefinedQuestion;
+        if (predefinedQuestion != null && predefinedQuestion.isNotEmpty) {
+          // Устанавливаем предварительно заданный вопрос в поле ввода
+          cubit.updateInput(predefinedQuestion);
 
-        // Отправляем сообщение
-        cubit.sendMessage();
+          // Отправляем сообщение
+          cubit.sendMessage();
+        }
       }
     });
+  }
+
+  /// Загружает сообщения из истории чата
+  void _loadHistoryMessages() {
+    debugPrint('[ChatScreen] Загружаем сообщения из истории');
+
+    final historyEntrypoint = widget.entrypoint as HistoryEntrypointEntity;
+    final messages = historyEntrypoint.chatHistory.messages;
+
+    // Очищаем текущие сообщения перед загрузкой истории
+    cubit.clearMessages();
+
+    // Загружаем сообщения из истории в правильном порядке
+    // Сообщения в истории хранятся в правильном хронологическом порядке
+    for (final message in messages) {
+      _addHistoryMessage(message);
+    }
+
+    debugPrint(
+      '[ChatScreen] Загружено ${messages.length} сообщений из истории',
+    );
+  }
+
+  /// Добавляет историческое сообщение в cubit
+  void _addHistoryMessage(MessageEntity message) {
+    // Создаем копию сообщения без streaming для режима только чтения
+    final readOnlyMessage = MessageEntity(
+      text: message.text,
+      isMe: message.isMe,
+      timestamp: message.timestamp,
+      hexagrams: message.hexagrams,
+      simpleInterpretation: message.simpleInterpretation,
+      complexInterpretation: message.complexInterpretation,
+    );
+
+    // Добавляем сообщение в состояние через метод cubit
+    // Используем внутренний метод для прямого добавления без обработки
+    final updatedMessages = List<MessageEntity>.from(cubit.state.messages)
+      ..insert(0, readOnlyMessage);
+
+    cubit.emit(cubit.state.copyWith(messages: updatedMessages));
   }
 
   // Метод для отслеживания прокрутки и закрытия клавиатуры
@@ -170,13 +217,15 @@ class _ChatScreenState extends State<ChatScreen> {
               // Даем немного времени для закрытия клавиатуры
               await Future.delayed(const Duration(milliseconds: 100));
 
-              // Полностью очищаем состояние кубита вместо просто очистки сообщений
-              await cubit.clear();
+              // В режиме истории не очищаем состояние cubit
+              if (!widget.entrypoint.isReadOnlyMode) {
+                // Полностью очищаем состояние кубита только в обычном режиме
+                await cubit.clear();
+              }
 
               return mounted;
             },
             child: ZScaffold(
-              isHome: false,
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -190,13 +239,16 @@ class _ChatScreenState extends State<ChatScreen> {
                         // Даем немного времени для закрытия клавиатуры
                         await Future.delayed(const Duration(milliseconds: 100));
 
-                        // Полностью очищаем состояние кубита вместо просто очистки сообщений
-                        await cubit.clear();
+                        // В режиме истории не очищаем состояние cubit
+                        if (!widget.entrypoint.isReadOnlyMode) {
+                          // Полностью очищаем состояние кубита только в обычном режиме
+                          await cubit.clear();
+                        }
 
                         if (widget.entrypoint is OnboardingEntrypointEntity) {
                           await Navigator.of(context).pushReplacement(
                             MaterialPageRoute(
-                              builder: (context) => const HomePage(),
+                              builder: (context) => const HomeScreen(),
                             ),
                           );
                         }
@@ -210,7 +262,10 @@ class _ChatScreenState extends State<ChatScreen> {
                         children: [
                           SvgPicture.asset('assets/arrow-left.svg'),
                           SizedBox(width: 8.w),
-                          Text('首页', style: context.styles.h2),
+                          Text(
+                            widget.entrypoint.isReadOnlyMode ? '历史' : '首页',
+                            style: context.styles.h2,
+                          ),
                         ],
                       ),
                     ),
@@ -251,7 +306,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
                     SizedBox(height: 20.h),
-                    if (state.isButtonAvailable)
+                    // Скрываем кнопку встряхивания в режиме только чтения
+                    if (state.isButtonAvailable &&
+                        !widget.entrypoint.isReadOnlyMode)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 24),
                         child: Zbutton(
@@ -295,15 +352,17 @@ class _ChatScreenState extends State<ChatScreen> {
                           textColor: ZColors.white,
                         ),
                       ),
-                    InputSendWidget(
-                      onSend:
-                          _handleSendMessage, // Используем новый метод вместо прямого вызова cubit.sendMessage()
-                      onTextChanged: (text) => cubit.updateInput(text),
-                      isSendAvailable: state.isSendAvailable,
-                      currentInput: state.currentInput,
-                      focusNode:
-                          _focusNode, // Передаем FocusNode в InputSendWidget
-                    ),
+                    // Скрываем виджет ввода в режиме только чтения
+                    if (!widget.entrypoint.isReadOnlyMode)
+                      InputSendWidget(
+                        onSend:
+                            _handleSendMessage, // Используем новый метод вместо прямого вызова cubit.sendMessage()
+                        onTextChanged: (text) => cubit.updateInput(text),
+                        isSendAvailable: state.isSendAvailable,
+                        currentInput: state.currentInput,
+                        focusNode:
+                            _focusNode, // Передаем FocusNode в InputSendWidget
+                      ),
                     SizedBox(height: 35.h),
                   ],
                 ),

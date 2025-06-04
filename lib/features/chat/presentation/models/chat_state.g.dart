@@ -31,6 +31,7 @@ ChatState _$ChatStateFromJson(Map<String, dynamic> json) => ChatState(
   hasActiveSubscription: json['hasActiveSubscription'] as bool? ?? false,
   remainingFreeRequests: (json['remainingFreeRequests'] as num?)?.toInt() ?? 0,
   shouldNavigateToPaywall: json['shouldNavigateToPaywall'] as bool? ?? false,
+  currentChatId: json['currentChatId'] as String?,
 );
 
 Map<String, dynamic> _$ChatStateToJson(ChatState instance) => <String, dynamic>{
@@ -45,6 +46,7 @@ Map<String, dynamic> _$ChatStateToJson(ChatState instance) => <String, dynamic>{
   'hasActiveSubscription': instance.hasActiveSubscription,
   'remainingFreeRequests': instance.remainingFreeRequests,
   'shouldNavigateToPaywall': instance.shouldNavigateToPaywall,
+  'currentChatId': instance.currentChatId,
 };
 
 HexagramContext _$HexagramContextFromJson(Map<String, dynamic> json) =>

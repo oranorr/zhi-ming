@@ -13,6 +13,7 @@ class ZTextStyle extends TextStyle {
          color: color ?? ZColors.black,
          fontFamily: 'NotoSansSC',
          fontWeight: fontWeight ?? AppFontWeight.regular,
+         textBaseline: TextBaseline.alphabetic,
        );
 }
 

@@ -21,6 +21,7 @@ class ChatState extends Equatable {
     this.hasActiveSubscription = false, // Статус подписки
     this.remainingFreeRequests = 0, // Количество оставшихся бесплатных запросов
     this.shouldNavigateToPaywall = false, // Флаг для навигации на paywall
+    this.currentChatId, // ID текущего чата для истории
   });
 
   factory ChatState.fromJson(Map<String, dynamic> json) =>
@@ -59,6 +60,9 @@ class ChatState extends Equatable {
   /// Флаг для навигации на экран оплаты
   final bool shouldNavigateToPaywall;
 
+  /// ID текущего чата для сохранения в истории
+  final String? currentChatId;
+
   /// Создание копии состояния с измененными параметрами
   ChatState copyWith({
     bool? isButtonAvailable,
@@ -73,6 +77,8 @@ class ChatState extends Equatable {
     bool? hasActiveSubscription,
     int? remainingFreeRequests,
     bool? shouldNavigateToPaywall,
+    String? currentChatId,
+    bool clearCurrentChatId = false,
   }) {
     return ChatState(
       isButtonAvailable: isButtonAvailable ?? this.isButtonAvailable,
@@ -93,6 +99,8 @@ class ChatState extends Equatable {
           remainingFreeRequests ?? this.remainingFreeRequests,
       shouldNavigateToPaywall:
           shouldNavigateToPaywall ?? this.shouldNavigateToPaywall,
+      currentChatId:
+          clearCurrentChatId ? null : (currentChatId ?? this.currentChatId),
     );
   }
 
@@ -124,6 +132,7 @@ class ChatState extends Equatable {
     hasActiveSubscription,
     remainingFreeRequests,
     shouldNavigateToPaywall,
+    currentChatId,
   ];
 }
 

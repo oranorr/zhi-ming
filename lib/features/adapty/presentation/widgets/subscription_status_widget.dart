@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:zhi_ming/features/adapty/adapty.dart';
+import 'package:zhi_ming/features/adapty/data/repositories/adapty_repository_impl.dart';
+import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
 
 /// Виджет для отображения статуса подписки пользователя
 /// Показывает информацию о премиум-доступе или оставшихся бесплатных запросах
@@ -30,12 +31,12 @@ class _SubscriptionStatusWidgetState extends State<SubscriptionStatusWidget> {
         _error = null;
       });
 
-      if (!AdaptyService.instance.isInitialized) {
-        throw StateError('AdaptyService не инициализирован');
+      if (!AdaptyRepositoryImpl.instance.isInitialized) {
+        throw StateError('AdaptyRepository не инициализирован');
       }
 
       final status =
-          await AdaptyService.instance.repository.getSubscriptionStatus();
+          await AdaptyRepositoryImpl.instance.getSubscriptionStatus();
 
       if (mounted) {
         setState(() {
@@ -55,7 +56,10 @@ class _SubscriptionStatusWidgetState extends State<SubscriptionStatusWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    final status = _subscriptionStatus;
+
+    // Если статус еще не загружен
+    if (status == null) {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(16),
@@ -107,8 +111,6 @@ class _SubscriptionStatusWidgetState extends State<SubscriptionStatusWidget> {
         ),
       );
     }
-
-    final status = _subscriptionStatus!;
 
     return Card(
       child: Padding(

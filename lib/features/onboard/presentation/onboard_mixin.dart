@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -6,10 +8,10 @@ import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
 import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_screen.dart';
-import 'package:zhi_ming/features/home/presentation/home_page.dart';
+import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 import 'package:zhi_ming/features/onboard/data/onboard_repo.dart';
+import 'package:zhi_ming/features/onboard/data/user_profile_service.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';
-import 'dart:convert';
 
 /// Миксин для управления состоянием экрана онбординга
 mixin OnboardMixin<T extends StatefulWidget> on State<T> {
@@ -21,6 +23,9 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
 
   // Сервис для работы с DeepSeek API
   late DeepSeekService _deepSeekService;
+
+  // Сервис для управления профилем пользователя
+  late UserProfileService _userProfileService;
 
   // Контроллеры
   final FocusNode focusNode = FocusNode();
@@ -58,6 +63,7 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
     super.initState();
     cubit = context.read<OnboardCubit>();
     _deepSeekService = DeepSeekService();
+    _userProfileService = UserProfileService();
 
     // Проверяем статус онбординга при инициализации
     _checkOnboardingStatus();
@@ -65,23 +71,50 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
 
   /// Проверяет, был ли пройден онбординг, и перенаправляет пользователя, если да
   Future<void> _checkOnboardingStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final onboardingCompleted = prefs.getBool(_onboardingCompletedKey) ?? false;
+    final onboardingCompleted =
+        await _userProfileService.isOnboardingCompleted();
 
     if (onboardingCompleted && mounted) {
       // Если онбординг был пройден, переходим на домашний экран
       // Используем прямой Navigator.pushReplacement чтобы избежать повторного сохранения статуса
-      Navigator.pushReplacement(
+      await Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     }
   }
 
-  /// Сохраняет статус завершения онбординга
-  Future<void> _saveOnboardingCompleted() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_onboardingCompletedKey, true);
+  /// Создает и сохраняет профиль пользователя
+  Future<bool> _saveUserProfile() async {
+    try {
+      print('[OnboardMixin] Создание профиля пользователя');
+
+      // Создаем профиль пользователя из собранных данных
+      final userProfile = UserProfile(
+        name: userName,
+        birthDate: selectedDate,
+        birthTime: cubit.state.birthTime ?? selectedTime,
+        interests: selectedInterests,
+      );
+
+      // Сохраняем профиль через сервис
+      final success = await _userProfileService.saveUserProfile(userProfile);
+
+      if (success) {
+        print(
+          '[OnboardMixin] Профиль пользователя успешно сохранен: $userProfile',
+        );
+        // Также сохраняем статус завершения онбординга
+        await _userProfileService.saveOnboardingCompleted();
+        return true;
+      } else {
+        print('[OnboardMixin] Не удалось сохранить профиль пользователя');
+        return false;
+      }
+    } catch (e) {
+      print('[OnboardMixin] Ошибка при сохранении профиля пользователя: $e');
+      return false;
+    }
   }
 
   @override
@@ -200,7 +233,7 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
     });
   }
 
-  /// Метод для сохранения выбранных интересов
+  /// Метод для сохранения выбранных интересов и завершения онбординга
   Future<void> saveInterests() async {
     // Показываем индикатор загрузки
     setState(() {
@@ -208,6 +241,13 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
     });
 
     try {
+      // Сначала сохраняем профиль пользователя
+      final profileSaved = await _saveUserProfile();
+
+      if (!profileSaved) {
+        throw Exception('Не удалось сохранить профиль пользователя');
+      }
+
       // Формируем данные пользователя для отправки в DeepSeek
       final Map<String, dynamic> userData = {
         'name': userName,
@@ -252,9 +292,14 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
           );
         });
       }
+
+      print('[OnboardMixin] Онбординг успешно завершен, профиль сохранен');
     } catch (e) {
       // В случае ошибки выводим сообщение и продолжаем
       print('[saveInterests] Ошибка при анализе данных: $e');
+
+      // Все равно пытаемся сохранить профиль, даже если анализ не удался
+      await _saveUserProfile();
 
       if (mounted) {
         setState(() {
@@ -281,21 +326,21 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
 
   /// Метод для перехода на домашний экран
   Future<void> navigateToHome() async {
-    // Сохраняем статус завершения онбординга перед переходом
-    await _saveOnboardingCompleted();
+    // Убеждаемся, что статус завершения онбординга сохранен
+    await _userProfileService.saveOnboardingCompleted();
 
     if (mounted) {
-      Navigator.pushReplacement(
+      await Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     }
   }
 
   /// Метод для перехода на экран чата
   Future<void> navigateToChat() async {
-    // Сохраняем статус завершения онбординга перед переходом
-    await _saveOnboardingCompleted();
+    // Убеждаемся, что статус завершения онбординга сохранен
+    await _userProfileService.saveOnboardingCompleted();
 
     if (mounted) {
       Navigator.pushReplacement(

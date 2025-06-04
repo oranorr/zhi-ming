@@ -16,6 +16,11 @@ abstract interface class AdaptyRepository {
   /// Возвращает список [SubscriptionProduct] с информацией о ценах и планах
   Future<List<SubscriptionProduct>> getAvailableProducts();
 
+  /// Принудительное обновление кэша продуктов
+  /// Обновляет локальный кэш продуктов из Adapty
+  /// Полезно для синхронизации с изменениями в Adapty Dashboard
+  Future<void> refreshProducts();
+
   /// Покупка подписки по идентификатору продукта
   /// [productId] - идентификатор продукта для покупки
   /// Возвращает true если покупка прошла успешно

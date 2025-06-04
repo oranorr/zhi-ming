@@ -1,215 +1,189 @@
-# Интеграция Adapty SDK
+# Adapty Feature
 
-Этот модуль предоставляет полную интеграцию с Adapty SDK для управления подписками в приложении.
+Эта функция обеспечивает интеграцию с Adapty SDK для управления подписками и внутренними покупками в приложении.
 
-## Структура
+## Архитектура
+
+Модуль построен по принципам Clean Architecture:
 
 ```
 lib/features/adapty/
-├── domain/                     # Доменный слой
-│   ├── models/                 # Модели данных
-│   │   ├── subscription_status.dart
-│   │   └── subscription_product.dart
-│   └── repositories/           # Интерфейсы репозиториев
-│       └── adapty_repository.dart
-├── data/                       # Слой данных
-│   ├── repositories/           # Реализации репозиториев
-│   │   └── adapty_repository_impl.dart
-│   └── services/               # Сервисы
-│       └── adapty_service.dart
-├── presentation/               # Слой представления
-│   ├── pages/                  # Страницы
-│   │   ├── adapty_test_page.dart
-│   │   └── paywall.dart
-│   └── widgets/                # Виджеты
-│       └── subscription_status_widget.dart
-├── adapty.dart                 # Файл экспорта
-└── README.md                   # Документация
+├── data/
+│   └── repositories/
+│       └── adapty_repository_impl.dart    # Реализация репозитория с Adapty SDK
+├── domain/
+│   ├── models/
+│   │   ├── subscription_product.dart       # Модель продукта подписки
+│   │   └── subscription_status.dart        # Модель статуса подписки
+│   └── repositories/
+│       └── adapty_repository.dart          # Абстрактный репозиторий
+└── presentation/
+    ├── pages/
+    │   └── adapty_test_page.dart           # Страница для тестирования
+    └── widgets/
+        └── subscription_status_widget.dart # Виджет статуса подписки
 ```
 
-## Основные компоненты
-
-### 1. Модели данных
-
-#### SubscriptionStatus
-Представляет статус подписки пользователя:
-- `hasPremiumAccess` - есть ли премиум доступ
-- `remainingFreeRequests` - оставшиеся бесплатные запросы
-- `expirationDate` - дата окончания подписки
-- `subscriptionType` - тип подписки
-
-#### SubscriptionProduct
-Представляет продукт подписки:
-- `productId` - идентификатор продукта
-- `title` - название продукта
-- `price` - цена в локальной валюте
-- `subscriptionPeriod` - период подписки (monthly, yearly, lifetime)
-- `discountPercentage` - процент скидки
-
-### 2. Репозиторий
+### Domain Layer
 
 #### AdaptyRepository
-Интерфейс для работы с Adapty SDK:
-- `initialize()` - инициализация SDK
-- `getSubscriptionStatus()` - получение статуса подписки
-- `getAvailableProducts()` - получение доступных продуктов
-- `purchaseSubscription()` - покупка подписки
-- `restorePurchases()` - восстановление покупок
-- `decrementFreeRequests()` - уменьшение счетчика бесплатных запросов
-- `canMakeRequest()` - проверка возможности запроса
-- `trackEvent()` - отправка событий
-- `setUserAttributes()` - установка атрибутов пользователя
 
-### 3. Сервис
+Абстрактный репозиторий определяет контракт для работы с подписками:
 
-#### AdaptyService
-Singleton сервис для управления Adapty SDK:
-- Инициализация SDK
-- Предоставление доступа к репозиторию
-- Управление состоянием
+```dart
+abstract interface class AdaptyRepository {
+  // Инициализация
+  Future<void> initialize();
+  
+  // Статус подписки
+  Future<SubscriptionStatus> getSubscriptionStatus();
+  
+  // Продукты
+  Future<List<SubscriptionProduct>> getAvailableProducts();
+  
+  // Покупки
+  Future<bool> purchaseSubscription(String productId);
+  Future<bool> restorePurchases();
+  
+  // Бесплатные запросы
+  Future<void> decrementFreeRequests();
+  Future<bool> canMakeRequest();
+  
+  // Аналитика
+  Future<void> trackEvent(String eventName, {Map<String, dynamic>? parameters});
+}
+```
 
-### 4. UI компоненты
+#### Модели
 
-#### SubscriptionStatusWidget
-Виджет для отображения статуса подписки пользователя.
+**SubscriptionStatus** - содержит информацию о текущем статусе подписки:
+- `hasPremiumAccess` - есть ли активная подписка
+- `remainingFreeRequests` - оставшиеся бесплатные запросы
+- `expirationDate` - дата окончания подписки
+
+**SubscriptionProduct** - информация о продукте подписки:
+- `productId` - идентификатор продукта
+- `title` - название
+- `price` - цена
+- `subscriptionPeriod` - период подписки
+
+### Data Layer
+
+#### AdaptyRepositoryImpl
+
+Реализация репозитория с Adapty SDK. Поддерживает:
+- Singleton pattern для глобального доступа
+- Fallback на mock данные в debug режиме
+- Локальное хранение счетчика бесплатных запросов
+- Обработку ошибок и исключений
+
+### Presentation Layer
 
 #### AdaptyTestPage
-Страница для тестирования функциональности Adapty.
+
+Страница для тестирования функциональности:
+- Отображение статуса подписки
+- Список доступных продуктов
+- Тестирование покупок и восстановления
+
+#### SubscriptionStatusWidget
+
+Переиспользуемый виджет для отображения статуса подписки в любой части приложения.
 
 ## Использование
 
-### 1. Инициализация
+### Инициализация
 
-В `main.dart` уже настроена инициализация:
+В `main.dart`:
 
 ```dart
-import 'package:zhi_ming/features/adapty/adapty.dart';
-
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  
-  // Инициализация Adapty SDK
+  // Активация Adapty SDK
   await Adapty().activate(
-    configuration: AdaptyConfiguration(
-      apiKey: 'public_live_fskP9YOd.ESywAoCmsmDLtoV0z9tI',
-    )..withLogLevel(AdaptyLogLevel.verbose),
+    configuration: AdaptyConfiguration(apiKey: 'your_api_key'),
   );
   
-  // Инициализация нашего сервиса
-  await AdaptyService.instance.initialize();
+  // Инициализация репозитория
+  await AdaptyRepositoryImpl.instance.initialize();
   
   runApp(const App());
 }
 ```
 
-### 2. Проверка статуса подписки
+### Проверка статуса подписки
 
 ```dart
-final status = await AdaptyService.instance.repository.getSubscriptionStatus();
+final repository = AdaptyRepositoryImpl.instance;
+final status = await repository.getSubscriptionStatus();
 
 if (status.hasPremiumAccess) {
-  // Пользователь имеет премиум доступ
-  print('Премиум до: ${status.expirationDate}');
+  // Пользователь имеет активную подписку
 } else {
-  // Бесплатный пользователь
+  // Показать количество оставшихся бесплатных запросов
   print('Осталось запросов: ${status.remainingFreeRequests}');
 }
 ```
 
-### 3. Получение продуктов
+### Загрузка и покупка продуктов
 
 ```dart
-final products = await AdaptyService.instance.repository.getAvailableProducts();
+final repository = AdaptyRepositoryImpl.instance;
 
-for (final product in products) {
-  print('${product.title}: ${product.price}');
-}
-```
+// Получение списка продуктов
+final products = await repository.getAvailableProducts();
 
-### 4. Покупка подписки
-
-```dart
-final success = await AdaptyService.instance.repository.purchaseSubscription('monthly_premium');
-
+// Покупка продукта
+final success = await repository.purchaseSubscription('monthly_premium');
 if (success) {
-  print('Подписка успешно приобретена');
-} else {
-  print('Ошибка покупки');
+  // Покупка прошла успешно
 }
 ```
 
-### 5. Использование бесплатного запроса
+### Проверка возможности запроса
 
 ```dart
-final canMake = await AdaptyService.instance.repository.canMakeRequest();
+final repository = AdaptyRepositoryImpl.instance;
 
+final canMake = await repository.canMakeRequest();
 if (canMake) {
   // Выполняем запрос
-  await AdaptyService.instance.repository.decrementFreeRequests();
-} else {
-  // Показываем paywall
-}
-```
-
-### 6. Отображение статуса подписки
-
-```dart
-import 'package:zhi_ming/features/adapty/adapty.dart';
-
-class MyPage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          const SubscriptionStatusWidget(),
-          // Другие виджеты
-        ],
-      ),
-    );
-  }
+  await performRequest();
+  
+  // Уменьшаем счетчик для бесплатных пользователей
+  await repository.decrementFreeRequests();
 }
 ```
 
 ## Тестирование
 
-Для тестирования функциональности используйте `AdaptyTestPage`:
+Для тестирования доступен debug-режим с:
+- Уменьшенным лимитом бесплатных запросов (5 вместо 20)
+- Mock продуктами при ошибках загрузки
+- Дополнительным логированием
 
-```dart
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => const AdaptyTestPage(),
-  ),
-);
-```
+Используйте `AdaptyTestPage` для проверки функциональности.
 
 ## Конфигурация
 
-### API ключ
-Текущий API ключ: `public_live_fskP9YOd.ESywAoCmsmDLtoV0z9tI`
+### Константы
 
-### Настройки бесплатных запросов
-- Debug режим: 5 запросов
-- Release режим: 20 запросов
+В `AdaptyRepositoryImpl`:
+- `_maxFreeRequests` - максимальное количество бесплатных запросов
+- `_premiumAccessLevel` - уровень доступа для премиум подписки
+- `_paywallPlacementId` - ID размещения paywall в Adapty
 
-### Placement ID
-Используется `zhi-ming-placement` для получения продуктов.
+### Локальное хранение
 
-## Архитектура
-
-Модуль следует принципам Clean Architecture:
-
-1. **Domain Layer** - содержит бизнес-логику и интерфейсы
-2. **Data Layer** - содержит реализации и работу с внешними API
-3. **Presentation Layer** - содержит UI компоненты
+Используется `FlutterSecureStorage` для хранения:
+- Счетчика бесплатных запросов
+- Статуса подписки (fallback)
 
 ## Обработка ошибок
 
-Все методы репозитория обрабатывают ошибки и предоставляют fallback значения:
-- При ошибке получения статуса возвращается бесплатный статус
-- При ошибке получения продуктов возвращаются mock данные
-- Все ошибки логируются с префиксом `[AdaptyRepositoryImpl]`
+Репозиторий обрабатывает ошибки gracefully:
+- При ошибках Adapty SDK возвращает безопасные значения по умолчанию
+- В debug режиме показывает mock данные
+- Логирует все ошибки для отладки
 
 ## Безопасность
 

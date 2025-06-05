@@ -1,5 +1,5 @@
-import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
 import 'package:zhi_ming/features/adapty/domain/models/subscription_product.dart';
+import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
 
 /// Абстрактный репозиторий для работы с Adapty SDK
 /// Определяет контракт для всех операций с подписками
@@ -35,8 +35,25 @@ abstract interface class AdaptyRepository {
   /// Вызывается при каждом использовании бесплатного запроса
   Future<void> decrementFreeRequests();
 
-  /// Проверка, может ли пользователь сделать запрос
+  /// Отметка использования бесплатного гадания
+  /// Устанавливает флаг что пользователь использовал свое единственное бесплатное гадание
+  Future<void> markFreeReadingAsUsed();
+
+  /// Уменьшение счетчика фоллоу-ап вопросов
+  /// Вызывается при каждом фоллоу-ап вопросе после завершения гадания
+  Future<void> decrementFollowUpQuestions();
+
+  /// Проверка возможности начать новое гадание
+  /// Возвращает true если пользователь может начать новое гадание (имеет подписку или не использовал бесплатное)
+  Future<bool> canStartNewReading();
+
+  /// Проверка возможности задать фоллоу-ап вопрос
+  /// Возвращает true если пользователь может задать фоллоу-ап вопрос (имеет подписку или остались вопросы)
+  Future<bool> canAskFollowUpQuestion();
+
+  /// Проверка, может ли пользователь сделать запрос (DEPRECATED)
   /// Учитывает как активную подписку, так и оставшиеся бесплатные запросы
+  /// РЕКОМЕНДУЕТСЯ использовать более специфичные методы canStartNewReading или canAskFollowUpQuestion
   Future<bool> canMakeRequest();
 
   /// Получение информации о paywall для отображения

@@ -6,7 +6,6 @@ import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_orchestrator_service.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_validation_service.dart';
 import 'package:zhi_ming/features/history/data/chat_history_service.dart';
-import 'package:zhi_ming/features/iching/models/hexagram.dart';
 
 /// Оптимизированный ChatCubit с делегированием бизнес-логики в сервисы
 /// Фокусируется только на управлении состоянием и координации операций
@@ -30,11 +29,15 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
   /// Обновление статуса подписки
   Future<void> _updateSubscriptionStatus() async {
-    final status = await _orchestratorService.getSubscriptionStatus();
+    final subscriptionStatus =
+        await _orchestratorService.getSubscriptionStatus();
     emit(
       state.copyWith(
-        hasActiveSubscription: status.hasActiveSubscription,
-        remainingFreeRequests: status.remainingFreeRequests,
+        hasActiveSubscription: subscriptionStatus.hasPremiumAccess,
+        remainingFreeRequests: subscriptionStatus.remainingFreeRequests,
+        hasUsedFreeReading: subscriptionStatus.hasUsedFreeReading,
+        remainingFollowUpQuestions:
+            subscriptionStatus.remainingFollowUpQuestions,
       ),
     );
   }
@@ -183,9 +186,13 @@ class ChatCubit extends HydratedCubit<ChatState> {
         emit(
           state.copyWith(
             hasActiveSubscription:
-                result.updatedSubscriptionStatus!.hasActiveSubscription,
+                result.updatedSubscriptionStatus!.hasPremiumAccess,
             remainingFreeRequests:
                 result.updatedSubscriptionStatus!.remainingFreeRequests,
+            hasUsedFreeReading:
+                result.updatedSubscriptionStatus!.hasUsedFreeReading,
+            remainingFollowUpQuestions:
+                result.updatedSubscriptionStatus!.remainingFollowUpQuestions,
           ),
         );
       }
@@ -485,9 +492,13 @@ class ChatCubit extends HydratedCubit<ChatState> {
         isButtonAvailable:
             false, // ВАЖНО: скрываем кнопку встряхивания после получения результата
         hasActiveSubscription:
-            result.updatedSubscriptionStatus!.hasActiveSubscription,
+            result.updatedSubscriptionStatus!.hasPremiumAccess,
         remainingFreeRequests:
             result.updatedSubscriptionStatus!.remainingFreeRequests,
+        hasUsedFreeReading:
+            result.updatedSubscriptionStatus!.hasUsedFreeReading,
+        remainingFollowUpQuestions:
+            result.updatedSubscriptionStatus!.remainingFollowUpQuestions,
       ),
     );
 
@@ -554,14 +565,26 @@ class ChatCubit extends HydratedCubit<ChatState> {
                   : state.currentQuestionContext,
         ),
       );
-    } else if (result.isError &&
-        _orchestratorService.shouldNavigateToPaywall(
-          hasActiveSubscription: state.hasActiveSubscription,
-          remainingFreeRequests: state.remainingFreeRequests,
-        )) {
-      // Ошибка из-за лимитов - переходим на paywall
-      _showErrorMessage(result.message);
-      _navigateToPaywall();
+    } else if (result.isError) {
+      // [ChatCubit] Если валидация вернула ошибку - это может быть ошибка пейвола
+      // Проверяем сообщение на наличие указания на пейвол
+      if (result.message.contains('бесплатное гадание') ||
+          result.message.contains('оформить подписку')) {
+        _showErrorMessage(result.message);
+        _navigateToPaywall();
+      } else {
+        // Обычная ошибка валидации
+        _showErrorMessage(result.message);
+        emit(
+          state.copyWith(
+            isButtonAvailable: result.shouldEnableShaking,
+            currentQuestionContext:
+                result.shouldClearContext
+                    ? const []
+                    : state.currentQuestionContext,
+          ),
+        );
+      }
     } else {
       // Обычная ошибка валидации
       _showErrorMessage(result.message);
@@ -689,6 +712,30 @@ class ChatCubit extends HydratedCubit<ChatState> {
         clearCurrentChatId: true,
       ),
     );
+  }
+
+  /// Проверка возможности начать новое гадание и показ пейвола если нужно
+  Future<bool> checkCanStartNewReading() async {
+    debugPrint('[ChatCubit] Проверка возможности начать новое гадание');
+
+    // Проверяем через оркестратор
+    final shouldShowPaywall = _orchestratorService
+        .shouldNavigateToPaywallForNewReading(
+          hasActiveSubscription: state.hasActiveSubscription,
+          hasUsedFreeReading: state.hasUsedFreeReading,
+        );
+
+    if (shouldShowPaywall) {
+      debugPrint('[ChatCubit] Показываем пейвол для нового гадания');
+      addBotMessage(
+        'Вы уже использовали свое бесплатное гадание. '
+        'Для продолжения необходимо оформить подписку.',
+      );
+      _navigateToPaywall();
+      return false;
+    }
+
+    return true;
   }
 
   /// Навигация на экран оплаты

@@ -19,7 +19,11 @@ class ChatState extends Equatable {
     this.currentQuestionContext =
         const [], // Контекст текущего формирующегося вопроса
     this.hasActiveSubscription = false, // Статус подписки
-    this.remainingFreeRequests = 0, // Количество оставшихся бесплатных запросов
+    this.remainingFreeRequests =
+        0, // DEPRECATED: Количество оставшихся бесплатных запросов
+    this.hasUsedFreeReading = false, // Использовал ли бесплатное гадание
+    this.remainingFollowUpQuestions =
+        0, // Количество оставшихся фоллоу-ап вопросов
     this.shouldNavigateToPaywall = false, // Флаг для навигации на paywall
     this.currentChatId, // ID текущего чата для истории
   });
@@ -54,8 +58,14 @@ class ChatState extends Equatable {
   /// Статус активной подписки пользователя
   final bool hasActiveSubscription;
 
-  /// Количество оставшихся бесплатных запросов
+  /// Количество оставшихся бесплатных запросов (DEPRECATED)
   final int remainingFreeRequests;
+
+  /// Использовал ли пользователь бесплатное гадание
+  final bool hasUsedFreeReading;
+
+  /// Количество оставшихся фоллоу-ап вопросов
+  final int remainingFollowUpQuestions;
 
   /// Флаг для навигации на экран оплаты
   final bool shouldNavigateToPaywall;
@@ -76,6 +86,8 @@ class ChatState extends Equatable {
     List<String>? currentQuestionContext,
     bool? hasActiveSubscription,
     int? remainingFreeRequests,
+    bool? hasUsedFreeReading,
+    int? remainingFollowUpQuestions,
     bool? shouldNavigateToPaywall,
     String? currentChatId,
     bool clearCurrentChatId = false,
@@ -97,6 +109,9 @@ class ChatState extends Equatable {
           hasActiveSubscription ?? this.hasActiveSubscription,
       remainingFreeRequests:
           remainingFreeRequests ?? this.remainingFreeRequests,
+      hasUsedFreeReading: hasUsedFreeReading ?? this.hasUsedFreeReading,
+      remainingFollowUpQuestions:
+          remainingFollowUpQuestions ?? this.remainingFollowUpQuestions,
       shouldNavigateToPaywall:
           shouldNavigateToPaywall ?? this.shouldNavigateToPaywall,
       currentChatId:
@@ -107,7 +122,14 @@ class ChatState extends Equatable {
   /// Сериализация в JSON
   Map<String, dynamic> toJson() => _$ChatStateToJson(this);
 
-  /// Проверка доступности запроса (есть подписка или остались бесплатные запросы)
+  /// Проверка возможности начать новое гадание
+  bool get canStartNewReading => hasActiveSubscription || !hasUsedFreeReading;
+
+  /// Проверка возможности задать фоллоу-ап вопрос
+  bool get canAskFollowUpQuestion =>
+      hasActiveSubscription || remainingFollowUpQuestions > 0;
+
+  /// Проверка доступности запроса (DEPRECATED - есть подписка или остались бесплатные запросы)
   bool get canMakeRequest => hasActiveSubscription || remainingFreeRequests > 0;
 
   /// Проверка наличия контекста последнего гадания
@@ -131,6 +153,8 @@ class ChatState extends Equatable {
     currentQuestionContext,
     hasActiveSubscription,
     remainingFreeRequests,
+    hasUsedFreeReading,
+    remainingFollowUpQuestions,
     shouldNavigateToPaywall,
     currentChatId,
   ];

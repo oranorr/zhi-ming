@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'package:zhi_ming/features/adapty/domain/repositories/adapty_repository.dart';
 import 'package:zhi_ming/features/adapty/data/repositories/adapty_repository_impl.dart';
+import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
+import 'package:zhi_ming/features/adapty/domain/repositories/adapty_repository.dart';
 
 /// Сервис для управления подпиской и лимитами запросов
 /// Отвечает за проверку доступности запросов, обновление счетчиков и статуса подписки
@@ -25,7 +26,7 @@ class ChatSubscriptionService {
     return hasSubscription;
   }
 
-  /// Получение количества оставшихся бесплатных запросов
+  /// Получение количества оставшихся бесплатных запросов (DEPRECATED)
   Future<int> getRemainingFreeRequests() async {
     final subscriptionStatus = await _adaptyRepository.getSubscriptionStatus();
     final remainingRequests = subscriptionStatus.remainingFreeRequests;
@@ -35,14 +36,14 @@ class ChatSubscriptionService {
     return remainingRequests;
   }
 
-  /// Проверка возможности выполнения запроса
+  /// Проверка возможности выполнения запроса (DEPRECATED)
   Future<bool> canMakeRequest() async {
     final canMake = await _adaptyRepository.canMakeRequest();
     debugPrint('[ChatSubscriptionService] Может ли сделать запрос: $canMake');
     return canMake;
   }
 
-  /// Уменьшение счетчика бесплатных запросов
+  /// Уменьшение счетчика бесплатных запросов (DEPRECATED)
   Future<void> decrementFreeRequests() async {
     await _adaptyRepository.decrementFreeRequests();
     debugPrint(
@@ -50,18 +51,48 @@ class ChatSubscriptionService {
     );
   }
 
-  /// Получение данных о статусе подписки
-  Future<SubscriptionStatus> getSubscriptionStatus() async {
-    final hasSubscription = await hasActiveSubscription();
-    final remainingRequests = await getRemainingFreeRequests();
-
-    return SubscriptionStatus(
-      hasActiveSubscription: hasSubscription,
-      remainingFreeRequests: remainingRequests,
+  /// Отметка использования бесплатного гадания
+  /// Устанавливает флаг что пользователь использовал свое единственное бесплатное гадание
+  Future<void> markFreeReadingAsUsed() async {
+    await _adaptyRepository.markFreeReadingAsUsed();
+    debugPrint(
+      '[ChatSubscriptionService] Бесплатное гадание отмечено как использованное',
     );
   }
 
-  /// Проверка лимитов перед выполнением запроса
+  /// Уменьшение счетчика фоллоу-ап вопросов
+  /// Вызывается при каждом фоллоу-ап вопросе после завершения гадания
+  Future<void> decrementFollowUpQuestions() async {
+    await _adaptyRepository.decrementFollowUpQuestions();
+    debugPrint('[ChatSubscriptionService] Счетчик фоллоу-ап вопросов уменьшен');
+  }
+
+  /// Проверка возможности начать новое гадание
+  /// Возвращает true если пользователь может начать новое гадание
+  Future<bool> canStartNewReading() async {
+    final canStart = await _adaptyRepository.canStartNewReading();
+    debugPrint(
+      '[ChatSubscriptionService] Может ли начать новое гадание: $canStart',
+    );
+    return canStart;
+  }
+
+  /// Проверка возможности задать фоллоу-ап вопрос
+  /// Возвращает true если пользователь может задать фоллоу-ап вопрос
+  Future<bool> canAskFollowUpQuestion() async {
+    final canAsk = await _adaptyRepository.canAskFollowUpQuestion();
+    debugPrint(
+      '[ChatSubscriptionService] Может ли задать фоллоу-ап вопрос: $canAsk',
+    );
+    return canAsk;
+  }
+
+  /// Получение данных о статусе подписки
+  Future<SubscriptionStatus> getSubscriptionStatus() async {
+    return _adaptyRepository.getSubscriptionStatus();
+  }
+
+  /// Проверка лимитов перед выполнением запроса (DEPRECATED)
   /// Возвращает результат проверки с детальной информацией
   Future<RequestCheckResult> checkRequestAvailability() async {
     debugPrint('[ChatSubscriptionService] Проверка доступности запроса');
@@ -91,18 +122,7 @@ class ChatSubscriptionService {
   }
 }
 
-/// Класс для хранения статуса подписки
-class SubscriptionStatus {
-  const SubscriptionStatus({
-    required this.hasActiveSubscription,
-    required this.remainingFreeRequests,
-  });
-
-  final bool hasActiveSubscription;
-  final int remainingFreeRequests;
-}
-
-/// Класс для результата проверки возможности запроса
+/// Класс для результата проверки возможности запроса (DEPRECATED)
 class RequestCheckResult {
   const RequestCheckResult({
     required this.canMakeRequest,

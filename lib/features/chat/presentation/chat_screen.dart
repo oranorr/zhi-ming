@@ -312,7 +312,14 @@ class _ChatScreenState extends State<ChatScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 24),
                         child: Zbutton(
-                          action: () {
+                          action: () async {
+                            // [ChatScreen] Проверяем возможность начать новое гадание
+                            final canStart =
+                                await cubit.checkCanStartNewReading();
+                            if (!canStart) {
+                              return; // Не показываем popup если нельзя начать новое гадание
+                            }
+
                             // [ChatScreen] Скрываем кнопку сразу при начале ритуала
                             cubit.toggleButton(false);
 

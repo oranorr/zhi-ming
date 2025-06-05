@@ -976,15 +976,15 @@ class _PlanCard extends StatelessWidget {
               // Кнопка скидки - адаптивная позиция
               if (hasDiscount)
                 Positioned(
-                  right: isCompact ? 120.w : 143.w, // Адаптивная позиция
-                  top: isCompact ? -10.h : -13.h, // Адаптивная позиция
+                  left: 143.w,
+                  top: -13.h,
                   child: Container(
-                    width: isCompact ? 45.w : 50.w, // Компактная ширина
-                    height: isCompact ? 20.h : 25.h, // Компактная высота
+                    width: 48.w,
+                    height: 26.h,
                     decoration: BoxDecoration(
                       color: const Color(0xFF6B73FF),
                       borderRadius: BorderRadius.circular(
-                        isCompact ? 10.r : 12.r,
+                        20.r,
                       ), // Компактные углы
                     ),
                     child: Center(

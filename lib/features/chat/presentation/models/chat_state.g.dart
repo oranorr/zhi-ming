@@ -30,6 +30,9 @@ ChatState _$ChatStateFromJson(Map<String, dynamic> json) => ChatState(
       const [],
   hasActiveSubscription: json['hasActiveSubscription'] as bool? ?? false,
   remainingFreeRequests: (json['remainingFreeRequests'] as num?)?.toInt() ?? 0,
+  hasUsedFreeReading: json['hasUsedFreeReading'] as bool? ?? false,
+  remainingFollowUpQuestions:
+      (json['remainingFollowUpQuestions'] as num?)?.toInt() ?? 0,
   shouldNavigateToPaywall: json['shouldNavigateToPaywall'] as bool? ?? false,
   currentChatId: json['currentChatId'] as String?,
 );
@@ -45,6 +48,8 @@ Map<String, dynamic> _$ChatStateToJson(ChatState instance) => <String, dynamic>{
   'currentQuestionContext': instance.currentQuestionContext,
   'hasActiveSubscription': instance.hasActiveSubscription,
   'remainingFreeRequests': instance.remainingFreeRequests,
+  'hasUsedFreeReading': instance.hasUsedFreeReading,
+  'remainingFollowUpQuestions': instance.remainingFollowUpQuestions,
   'shouldNavigateToPaywall': instance.shouldNavigateToPaywall,
   'currentChatId': instance.currentChatId,
 };

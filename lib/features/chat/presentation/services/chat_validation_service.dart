@@ -115,18 +115,50 @@ class ChatValidationService {
     }
   }
 
-  /// Проверка необходимости перехода на экран оплаты
+  /// Проверка необходимости перехода на экран оплаты (DEPRECATED)
+  /// УСТАРЕЛО: Используйте более специфичные методы
   bool shouldNavigateToPaywall({
     required bool hasActiveSubscription,
     required int remainingFreeRequests,
   }) {
     final shouldNavigate = !hasActiveSubscription && remainingFreeRequests <= 0;
     debugPrint(
-      '[ChatValidationService] Проверка paywall: '
+      '[ChatValidationService] DEPRECATED: Проверка paywall: '
       'подписка=$hasActiveSubscription, запросы=$remainingFreeRequests, '
       'переходить=$shouldNavigate',
     );
     return shouldNavigate;
+  }
+
+  /// Проверка необходимости показа пейвола при попытке начать новое гадание
+  /// Возвращает true если пользователь уже использовал бесплатное гадание и не имеет подписки
+  bool shouldShowPaywallForNewReading({
+    required bool hasActiveSubscription,
+    required bool hasUsedFreeReading,
+  }) {
+    final shouldShow = !hasActiveSubscription && hasUsedFreeReading;
+    debugPrint(
+      '[ChatValidationService] Проверка paywall для нового гадания: '
+      'подписка=$hasActiveSubscription, использовал_бесплатное=$hasUsedFreeReading, '
+      'показывать=$shouldShow',
+    );
+    return shouldShow;
+  }
+
+  /// Проверка необходимости показа пейвола при попытке задать фоллоу-ап вопрос
+  /// Возвращает true если у пользователя нет подписки и закончились фоллоу-ап вопросы
+  bool shouldShowPaywallForFollowUp({
+    required bool hasActiveSubscription,
+    required int remainingFollowUpQuestions,
+  }) {
+    final shouldShow =
+        !hasActiveSubscription && remainingFollowUpQuestions <= 0;
+    debugPrint(
+      '[ChatValidationService] Проверка paywall для фоллоу-ап: '
+      'подписка=$hasActiveSubscription, остатки_вопросов=$remainingFollowUpQuestions, '
+      'показывать=$shouldShow',
+    );
+    return shouldShow;
   }
 }
 

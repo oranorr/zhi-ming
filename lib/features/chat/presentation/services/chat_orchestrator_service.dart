@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
 import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
+import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_subscription_service.dart';
@@ -44,14 +45,18 @@ class ChatOrchestratorService {
   Future<ValidationResult> validateUserRequest(
     List<String> questionContext,
   ) async {
-    // Сначала проверяем возможность выполнения запроса
-    final requestCheck = await _subscriptionService.checkRequestAvailability();
+    // [ChatOrchestratorService] Проверяем возможность начать новое гадание
+    final canStartReading = await _subscriptionService.canStartNewReading();
 
-    if (!requestCheck.canMakeRequest) {
+    if (!canStartReading) {
       debugPrint(
-        '[ChatOrchestratorService] Запрос заблокирован: ${requestCheck.reason}',
+        '[ChatOrchestratorService] Нельзя начать новое гадание - показываем пейвол',
       );
-      return ValidationResult.error(message: requestCheck.reason);
+      return ValidationResult.error(
+        message:
+            'Вы уже использовали свое бесплатное гадание. '
+            'Для продолжения необходимо оформить подписку.',
+      );
     }
 
     // Если запрос возможен, валидируем его содержание
@@ -66,12 +71,14 @@ class ChatOrchestratorService {
   }) async {
     debugPrint('[ChatOrchestratorService] Обработка последующего вопроса');
 
-    // Проверяем возможность выполнения запроса
-    final requestCheck = await _subscriptionService.checkRequestAvailability();
+    // [ChatOrchestratorService] Проверяем возможность задать фоллоу-ап вопрос
+    final canAskFollowUp = await _subscriptionService.canAskFollowUpQuestion();
 
-    if (!requestCheck.canMakeRequest) {
+    if (!canAskFollowUp) {
       return FollowUpQuestionResult.paywalRequired(
-        message: requestCheck.reason,
+        message:
+            'Вы исчерпали все бесплатные дополнительные вопросы. '
+            'Для продолжения необходимо оформить подписку.',
       );
     }
 
@@ -83,8 +90,8 @@ class ChatOrchestratorService {
     );
 
     if (result.isSuccess) {
-      // Уменьшаем счетчик запросов после успешной обработки
-      await _subscriptionService.decrementFreeRequests();
+      // [ChatOrchestratorService] Уменьшаем счетчик фоллоу-ап вопросов после успешной обработки
+      await _subscriptionService.decrementFollowUpQuestions();
 
       return FollowUpQuestionResult.success(
         response: result.response,
@@ -109,13 +116,14 @@ class ChatOrchestratorService {
       // Скрываем клавиатуру
       await SystemChannels.textInput.invokeMethod('TextInput.hide');
 
-      // Проверяем возможность выполнения запроса
-      final requestCheck =
-          await _subscriptionService.checkRequestAvailability();
+      // [ChatOrchestratorService] Проверяем возможность начать новое гадание
+      final canStartReading = await _subscriptionService.canStartNewReading();
 
-      if (!requestCheck.canMakeRequest) {
+      if (!canStartReading) {
         return ShakeProcessingResult.paywallRequired(
-          message: requestCheck.reason,
+          message:
+              'Вы уже использовали свое бесплатное гадание. '
+              'Для продолжения необходимо оформить подписку.',
         );
       }
 
@@ -154,8 +162,8 @@ class ChatOrchestratorService {
             secondaryHexagram: hexagramPair.secondary,
           );
 
-      // Уменьшаем счетчик запросов после успешного гадания
-      await _subscriptionService.decrementFreeRequests();
+      // [ChatOrchestratorService] Отмечаем использование бесплатного гадания ПОСЛЕ успешного получения интерпретации
+      await _subscriptionService.markFreeReadingAsUsed();
 
       // Сбрасываем результаты встряхиваний для следующего сеанса
       shakerService.resetCoinThrows();
@@ -178,6 +186,106 @@ class ChatOrchestratorService {
     }
   }
 
+  /// Обработка результата встряхивания с гексаграммами
+  /// [userQuestion] - вопрос пользователя для интерпретации
+  /// [hexagramPair] - результат бросков монет
+  Future<ShakeProcessingResult> processShakeResult({
+    required String userQuestion,
+    required HexagramPair hexagramPair,
+  }) async {
+    try {
+      debugPrint(
+        '[ChatOrchestratorService] Обработка результата встряхивания для вопроса: $userQuestion',
+      );
+
+      // Получаем интерпретацию от DeepSeek
+      final interpretationResult = await _deepSeekService
+          .interpretHexagramsStructured(
+            question: userQuestion,
+            primaryHexagram: hexagramPair.primary,
+            secondaryHexagram: hexagramPair.secondary,
+          );
+
+      // [ChatOrchestratorService] ВАЖНО: Отмечаем использование бесплатного гадания ПОСЛЕ успешного получения интерпретации
+      await _subscriptionService.markFreeReadingAsUsed();
+
+      // Примечание: сброс результатов встряхиваний должен выполняться во внешнем коде
+
+      return ShakeProcessingResult.success(
+        hexagramPair: hexagramPair,
+        interpretationResult: interpretationResult,
+        userQuestion: userQuestion,
+        updatedSubscriptionStatus:
+            await _subscriptionService.getSubscriptionStatus(),
+      );
+    } catch (e) {
+      debugPrint(
+        '[ChatOrchestratorService] Ошибка при обработке встряхивания: $e',
+      );
+      return ShakeProcessingResult.error(
+        message:
+            'Произошла ошибка при обработке гадания. Пожалуйста, попробуйте еще раз.',
+      );
+    }
+  }
+
+  /// Обработка последующего вопроса пользователя
+  /// [question] - новый вопрос от пользователя
+  /// [context] - контекст последнего гадания
+  /// [conversationHistory] - история сообщений для контекста
+  Future<FollowUpQuestionResult> processFollowUpQuestion({
+    required String question,
+    required HexagramContext context,
+    required List<MessageEntity> conversationHistory,
+  }) async {
+    debugPrint(
+      '[ChatOrchestratorService] Обработка последующего вопроса: $question',
+    );
+
+    try {
+      // [ChatOrchestratorService] Проверяем возможность задать фоллоу-ап вопрос
+      final subscriptionStatus =
+          await _subscriptionService.getSubscriptionStatus();
+
+      if (!subscriptionStatus.canAskFollowUpQuestion) {
+        return FollowUpQuestionResult.paywalRequired(
+          message:
+              'Вы исчерпали все бесплатные дополнительные вопросы. '
+              'Для продолжения необходимо оформить подписку.',
+        );
+      }
+
+      // Обрабатываем вопрос через валидационный сервис
+      final result = await _validationService.handleFollowUpQuestion(
+        question: question,
+        context: context,
+        conversationHistory: conversationHistory,
+      );
+
+      if (result.isSuccess) {
+        // [ChatOrchestratorService] Уменьшаем счетчик фоллоу-ап вопросов ПОСЛЕ успешной обработки
+        await _subscriptionService.decrementFollowUpQuestions();
+
+        return FollowUpQuestionResult.success(
+          response: result.response,
+          updatedSubscriptionStatus:
+              await _subscriptionService.getSubscriptionStatus(),
+        );
+      } else {
+        return FollowUpQuestionResult.error(message: result.errorMessage);
+      }
+    } catch (e) {
+      debugPrint(
+        '[ChatOrchestratorService] Ошибка при обработке последующего вопроса: $e',
+      );
+      return FollowUpQuestionResult.error(
+        message:
+            'Произошла ошибка при обработке вашего вопроса. '
+            'Пожалуйста, попробуйте сформулировать его иначе.',
+      );
+    }
+  }
+
   /// Настройка streaming для сообщения
   void setupMessageStreaming({
     required MessageEntity message,
@@ -194,7 +302,29 @@ class ChatOrchestratorService {
     _streamingService.stopAllStreaming();
   }
 
-  /// Проверка необходимости перехода на paywall
+  /// Проверка необходимости перехода на paywall для нового гадания
+  bool shouldNavigateToPaywallForNewReading({
+    required bool hasActiveSubscription,
+    required bool hasUsedFreeReading,
+  }) {
+    return _validationService.shouldShowPaywallForNewReading(
+      hasActiveSubscription: hasActiveSubscription,
+      hasUsedFreeReading: hasUsedFreeReading,
+    );
+  }
+
+  /// Проверка необходимости перехода на paywall для фоллоу-ап вопроса
+  bool shouldNavigateToPaywallForFollowUp({
+    required bool hasActiveSubscription,
+    required int remainingFollowUpQuestions,
+  }) {
+    return _validationService.shouldShowPaywallForFollowUp(
+      hasActiveSubscription: hasActiveSubscription,
+      remainingFollowUpQuestions: remainingFollowUpQuestions,
+    );
+  }
+
+  /// Проверка необходимости перехода на paywall (DEPRECATED)
   bool shouldNavigateToPaywall({
     required bool hasActiveSubscription,
     required int remainingFreeRequests,

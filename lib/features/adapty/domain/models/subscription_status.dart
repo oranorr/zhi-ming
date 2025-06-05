@@ -8,6 +8,9 @@ class SubscriptionStatus extends Equatable {
     required this.remainingFreeRequests,
     required this.maxFreeRequests,
     required this.hasPremiumAccess,
+    required this.hasUsedFreeReading,
+    required this.remainingFollowUpQuestions,
+    required this.maxFollowUpQuestions,
     this.expirationDate,
     this.subscriptionType,
   });
@@ -16,12 +19,18 @@ class SubscriptionStatus extends Equatable {
   factory SubscriptionStatus.free({
     required int remainingFreeRequests,
     required int maxFreeRequests,
+    required bool hasUsedFreeReading,
+    required int remainingFollowUpQuestions,
+    required int maxFollowUpQuestions,
   }) {
     return SubscriptionStatus(
       isActive: false,
       remainingFreeRequests: remainingFreeRequests,
       maxFreeRequests: maxFreeRequests,
       hasPremiumAccess: false,
+      hasUsedFreeReading: hasUsedFreeReading,
+      remainingFollowUpQuestions: remainingFollowUpQuestions,
+      maxFollowUpQuestions: maxFollowUpQuestions,
     );
   }
 
@@ -34,9 +43,12 @@ class SubscriptionStatus extends Equatable {
       isActive: true,
       expirationDate: expirationDate,
       subscriptionType: subscriptionType,
-      remainingFreeRequests: 0, // Неограниченно для премиум
+      remainingFreeRequests: 0,
       maxFreeRequests: 0,
       hasPremiumAccess: true,
+      hasUsedFreeReading: false,
+      remainingFollowUpQuestions: 0,
+      maxFollowUpQuestions: 0,
     );
   }
 
@@ -58,6 +70,22 @@ class SubscriptionStatus extends Equatable {
   /// Есть ли доступ к премиум функциям
   final bool hasPremiumAccess;
 
+  /// Использовал ли пользователь бесплатное гадание
+  final bool hasUsedFreeReading;
+
+  /// Количество оставшихся фоллоу-ап вопросов
+  final int remainingFollowUpQuestions;
+
+  /// Максимальное количество фоллоу-ап вопросов
+  final int maxFollowUpQuestions;
+
+  /// Может ли пользователь начать новое гадание
+  bool get canStartNewReading => hasPremiumAccess || !hasUsedFreeReading;
+
+  /// Может ли пользователь задать фоллоу-ап вопрос
+  bool get canAskFollowUpQuestion =>
+      hasPremiumAccess || remainingFollowUpQuestions > 0;
+
   /// Может ли пользователь сделать запрос
   bool get canMakeRequest => hasPremiumAccess || remainingFreeRequests > 0;
 
@@ -69,6 +97,9 @@ class SubscriptionStatus extends Equatable {
     int? remainingFreeRequests,
     int? maxFreeRequests,
     bool? hasPremiumAccess,
+    bool? hasUsedFreeReading,
+    int? remainingFollowUpQuestions,
+    int? maxFollowUpQuestions,
   }) {
     return SubscriptionStatus(
       isActive: isActive ?? this.isActive,
@@ -78,6 +109,10 @@ class SubscriptionStatus extends Equatable {
           remainingFreeRequests ?? this.remainingFreeRequests,
       maxFreeRequests: maxFreeRequests ?? this.maxFreeRequests,
       hasPremiumAccess: hasPremiumAccess ?? this.hasPremiumAccess,
+      hasUsedFreeReading: hasUsedFreeReading ?? this.hasUsedFreeReading,
+      remainingFollowUpQuestions:
+          remainingFollowUpQuestions ?? this.remainingFollowUpQuestions,
+      maxFollowUpQuestions: maxFollowUpQuestions ?? this.maxFollowUpQuestions,
     );
   }
 
@@ -89,12 +124,17 @@ class SubscriptionStatus extends Equatable {
     remainingFreeRequests,
     maxFreeRequests,
     hasPremiumAccess,
+    hasUsedFreeReading,
+    remainingFollowUpQuestions,
+    maxFollowUpQuestions,
   ];
 
   @override
   String toString() {
     return 'SubscriptionStatus(isActive: $isActive, expirationDate: $expirationDate, '
         'subscriptionType: $subscriptionType, remainingFreeRequests: $remainingFreeRequests, '
-        'maxFreeRequests: $maxFreeRequests, hasPremiumAccess: $hasPremiumAccess)';
+        'maxFreeRequests: $maxFreeRequests, hasPremiumAccess: $hasPremiumAccess, '
+        'hasUsedFreeReading: $hasUsedFreeReading, remainingFollowUpQuestions: $remainingFollowUpQuestions, '
+        'maxFollowUpQuestions: $maxFollowUpQuestions)';
   }
 }

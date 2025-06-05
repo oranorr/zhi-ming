@@ -1,7 +1,7 @@
+import 'dart:io';
 import 'package:adapty_flutter/adapty_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:io';
 import 'package:zhi_ming/features/adapty/domain/models/subscription_product.dart';
 import 'package:zhi_ming/features/adapty/domain/models/subscription_status.dart';
 import 'package:zhi_ming/features/adapty/domain/repositories/adapty_repository.dart';
@@ -19,7 +19,12 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
   static const _storage = FlutterSecureStorage();
 
   // Ключи для локального хранения
-  static const String _freeRequestsCountKey = 'free_requests_count';
+  static const String _freeRequestsCountKey =
+      'free_requests_count'; // DEPRECATED - оставляем для совместимости
+  static const String _hasUsedFreeReadingKey =
+      'has_used_free_reading'; // [AdaptyRepositoryImpl] Использовал ли бесплатное гадание
+  static const String _followUpQuestionsCountKey =
+      'follow_up_questions_count'; // [AdaptyRepositoryImpl] Счетчик фоллоу-ап вопросов
   static const String _subscriptionStatusKey = 'subscription_status';
   static const String _emulatorSubscriptionKey =
       'emulator_subscription_active'; // [AdaptyRepositoryImpl] Ключ для хранения фейковой подписки на эмуляторе
@@ -30,7 +35,12 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
   static const String _paywallPlacementId = 'zhi-ming-placement';
 
   // Константы
-  static const int _maxFreeRequests = kDebugMode ? 5 : 20;
+  static const int _maxFreeRequests =
+      kDebugMode ? 5 : 20; // DEPRECATED - оставляем для совместимости
+  static const int _maxFollowUpQuestions =
+      kDebugMode
+          ? 5
+          : 20; // [AdaptyRepositoryImpl] Максимальное количество фоллоу-ап вопросов
   static const String _premiumAccessLevel = 'premium';
 
   bool _isInitialized = false;
@@ -145,7 +155,7 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
 
       // Adapty SDK уже активирован в main.dart, здесь только инициализируем локальные данные
 
-      // Инициализируем счетчик бесплатных запросов, если он еще не установлен
+      // [AdaptyRepositoryImpl] Инициализируем старый счетчик для совместимости
       final currentCount = await _getRemainingFreeRequests();
       if (currentCount == _maxFreeRequests) {
         final savedCount = await _storage.read(key: _freeRequestsCountKey);
@@ -160,6 +170,9 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         }
       }
 
+      // [AdaptyRepositoryImpl] Инициализируем новую систему счетчиков
+      await _initializeNewCounterSystem();
+
       // [AdaptyRepositoryImpl] Предзагружаем продукты при инициализации
       await _preloadProducts();
 
@@ -168,6 +181,35 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
     } catch (e) {
       debugPrint('[AdaptyRepositoryImpl] Ошибка инициализации репозитория: $e');
       rethrow;
+    }
+  }
+
+  /// Инициализация новой системы счетчиков
+  /// [AdaptyRepositoryImpl] Устанавливает начальные значения для новых пользователей
+  Future<void> _initializeNewCounterSystem() async {
+    // Проверяем флаг использования бесплатного гадания
+    final hasUsedFreeReadingString = await _storage.read(
+      key: _hasUsedFreeReadingKey,
+    );
+    if (hasUsedFreeReadingString == null) {
+      await _storage.write(key: _hasUsedFreeReadingKey, value: 'false');
+      debugPrint(
+        '[AdaptyRepositoryImpl] Установлен флаг бесплатного гадания: false',
+      );
+    }
+
+    // Проверяем счетчик фоллоу-ап вопросов
+    final followUpCountString = await _storage.read(
+      key: _followUpQuestionsCountKey,
+    );
+    if (followUpCountString == null) {
+      await _storage.write(
+        key: _followUpQuestionsCountKey,
+        value: _maxFollowUpQuestions.toString(),
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] Установлен счетчик фоллоу-ап вопросов: $_maxFollowUpQuestions',
+      );
     }
   }
 
@@ -304,6 +346,10 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
     try {
       debugPrint('[AdaptyRepositoryImpl] Получение статуса подписки...');
 
+      // [AdaptyRepositoryImpl] Получаем новые данные о счетчиках
+      final hasUsedFreeReading = await _getHasUsedFreeReading();
+      final remainingFollowUpQuestions = await _getRemainingFollowUpQuestions();
+
       // [AdaptyRepositoryImpl] Проверяем фейковую подписку на эмуляторе в первую очередь
       if (_isRunningOnEmulator) {
         final emulatorSubscriptionActive = await _storage.read(
@@ -360,12 +406,19 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         return SubscriptionStatus.free(
           remainingFreeRequests: remainingFreeRequests,
           maxFreeRequests: _maxFreeRequests,
+          hasUsedFreeReading: hasUsedFreeReading,
+          remainingFollowUpQuestions: remainingFollowUpQuestions,
+          maxFollowUpQuestions: _maxFollowUpQuestions,
         );
       }
     } on Exception catch (e) {
       debugPrint(
         '[AdaptyRepositoryImpl] Ошибка получения статуса подписки: $e',
       );
+
+      // [AdaptyRepositoryImpl] Получаем данные для обработки ошибки
+      final hasUsedFreeReading = await _getHasUsedFreeReading();
+      final remainingFollowUpQuestions = await _getRemainingFollowUpQuestions();
 
       // [AdaptyRepositoryImpl] В случае ошибки на эмуляторе все равно проверяем фейковую подписку
       if (_isRunningOnEmulator) {
@@ -392,6 +445,9 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
       return SubscriptionStatus.free(
         remainingFreeRequests: remainingFreeRequests,
         maxFreeRequests: _maxFreeRequests,
+        hasUsedFreeReading: hasUsedFreeReading,
+        remainingFollowUpQuestions: remainingFollowUpQuestions,
+        maxFollowUpQuestions: _maxFollowUpQuestions,
       );
     }
   }
@@ -952,6 +1008,126 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
       debugPrint(
         '[AdaptyRepositoryImpl] ⚠️ Попытка очистить фейковую подписку не на эмуляторе',
       );
+    }
+  }
+
+  /// Получение флага использования бесплатного гадания
+  /// [AdaptyRepositoryImpl] Проверяет, использовал ли пользователь свое бесплатное гадание
+  Future<bool> _getHasUsedFreeReading() async {
+    try {
+      final hasUsedString = await _storage.read(key: _hasUsedFreeReadingKey);
+      final hasUsed = hasUsedString == 'true';
+      debugPrint(
+        '[AdaptyRepositoryImpl] Флаг использования бесплатного гадания: $hasUsed',
+      );
+      return hasUsed;
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Ошибка чтения флага бесплатного гадания: $e',
+      );
+      return false; // По умолчанию считаем что не использовал
+    }
+  }
+
+  /// Получение количества оставшихся фоллоу-ап вопросов
+  /// [AdaptyRepositoryImpl] Возвращает количество доступных фоллоу-ап вопросов
+  Future<int> _getRemainingFollowUpQuestions() async {
+    try {
+      final countString = await _storage.read(key: _followUpQuestionsCountKey);
+      final count = int.tryParse(countString ?? '0') ?? _maxFollowUpQuestions;
+      debugPrint('[AdaptyRepositoryImpl] Оставшиеся фоллоу-ап вопросы: $count');
+      return count;
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Ошибка чтения счетчика фоллоу-ап вопросов: $e',
+      );
+      return _maxFollowUpQuestions; // По умолчанию возвращаем максимум
+    }
+  }
+
+  /// Отметка использования бесплатного гадания
+  /// [AdaptyRepositoryImpl] Устанавливает флаг что пользователь использовал бесплатное гадание
+  @override
+  Future<void> markFreeReadingAsUsed() async {
+    try {
+      await _storage.write(key: _hasUsedFreeReadingKey, value: 'true');
+      debugPrint(
+        '[AdaptyRepositoryImpl] Бесплатное гадание отмечено как использованное',
+      );
+
+      // Трекаем событие использования бесплатного гадания
+      await trackEvent('free_reading_used');
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Ошибка установки флага бесплатного гадания: $e',
+      );
+    }
+  }
+
+  /// Уменьшение счетчика фоллоу-ап вопросов
+  /// [AdaptyRepositoryImpl] Уменьшает счетчик доступных фоллоу-ап вопросов
+  @override
+  Future<void> decrementFollowUpQuestions() async {
+    try {
+      final currentCount = await _getRemainingFollowUpQuestions();
+      if (currentCount > 0) {
+        final newCount = currentCount - 1;
+        await _storage.write(
+          key: _followUpQuestionsCountKey,
+          value: newCount.toString(),
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] Счетчик фоллоу-ап вопросов уменьшен до: $newCount',
+        );
+
+        // Трекаем событие использования фоллоу-ап вопроса
+        await trackEvent(
+          'follow_up_question_used',
+          parameters: {'remaining_questions': newCount},
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Ошибка уменьшения счетчика фоллоу-ап вопросов: $e',
+      );
+    }
+  }
+
+  /// Проверка возможности начать новое гадание
+  /// [AdaptyRepositoryImpl] Проверяет может ли пользователь начать новое гадание
+  @override
+  Future<bool> canStartNewReading() async {
+    try {
+      final status = await getSubscriptionStatus();
+      final canStart = status.canStartNewReading;
+      debugPrint(
+        '[AdaptyRepositoryImpl] Может ли начать новое гадание: $canStart',
+      );
+      return canStart;
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Ошибка проверки возможности нового гадания: $e',
+      );
+      return false;
+    }
+  }
+
+  /// Проверка возможности задать фоллоу-ап вопрос
+  /// [AdaptyRepositoryImpl] Проверяет может ли пользователь задать фоллоу-ап вопрос
+  @override
+  Future<bool> canAskFollowUpQuestion() async {
+    try {
+      final status = await getSubscriptionStatus();
+      final canAsk = status.canAskFollowUpQuestion;
+      debugPrint(
+        '[AdaptyRepositoryImpl] Может ли задать фоллоу-ап вопрос: $canAsk',
+      );
+      return canAsk;
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] Ошибка проверки возможности фоллоу-ап вопроса: $e',
+      );
+      return false;
     }
   }
 }

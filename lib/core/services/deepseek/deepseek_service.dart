@@ -15,6 +15,7 @@ enum AgentType {
   ichingInterpreter, // Интерпретирует результаты гадания и-дзин
   onboarding, // Для онбординга
   followUpQuestions, // Для обработки последующих вопросов
+  bazsu, // Для интерпретации Ба-Дзы (Four Pillars of Destiny)
 }
 
 class DeepSeekService {
@@ -740,6 +741,8 @@ class DeepSeekService {
         return 'deepseek-chat';
       case AgentType.followUpQuestions:
         return 'deepseek-chat';
+      case AgentType.bazsu:
+        return 'deepseek-chat';
     }
   }
 
@@ -753,7 +756,9 @@ class DeepSeekService {
       case AgentType.onboarding:
         return onboarder;
       case AgentType.followUpQuestions:
-        return followUpQuestionsPrompt; // Нужно будет добавить этот промпт
+        return followUpQuestionsPrompt;
+      case AgentType.bazsu:
+        return bazsuPrompt;
     }
   }
 

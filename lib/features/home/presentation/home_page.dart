@@ -310,33 +310,52 @@ class _ScrollButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20.w),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          width: double.infinity,
-          height: 110.h,
-          decoration: const BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage('assets/back.png'),
-              fit: BoxFit.cover,
+      child: GestureDetector(
+        onTap: () {
+          // [_ScrollButton] Открываем чат с Ба-Дзы entrypoint
+          debugPrint('[_ScrollButton] Переход к Ба-Дзы гаданию');
+
+          final cubit = context.read<ChatCubit>();
+          cubit.toggleButton(false);
+
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder:
+                  (context) => BlocProvider.value(
+                    value: cubit,
+                    child: ChatScreen(entrypoint: BaDzyEntrypointEntity()),
+                  ),
             ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18.w, 14.h, 0, 14.h),
-            child: Row(
-              // mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Image.asset('assets/scroll.png', width: 73.w, height: 82.h),
-                SizedBox(width: 21.w),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('开启你的命运之旅', style: context.styles.lRegular),
-                    Text('探索八字的奥秘', style: context.styles.mRegular),
-                  ],
-                ),
-              ],
+          );
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            width: double.infinity,
+            height: 110.h,
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/back.png'),
+                fit: BoxFit.cover,
+              ),
+            ),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(18.w, 14.h, 0, 14.h),
+              child: Row(
+                // mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Image.asset('assets/scroll.png', width: 73.w, height: 82.h),
+                  SizedBox(width: 21.w),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('开启你的命运之旅', style: context.styles.lRegular),
+                      Text('探索八字的奥秘', style: context.styles.mRegular),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

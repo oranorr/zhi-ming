@@ -1,6 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:hydrated_bloc/hydrated_bloc.dart';
+import 'package:zhi_ming/core/services/deepseek/deepseek_service.dart';
+import 'package:zhi_ming/core/services/deepseek/models/message.dart';
 import 'package:zhi_ming/core/services/shake_service/shaker_service_repo.dart';
+import 'package:zhi_ming/core/services/user_service.dart';
+import 'package:zhi_ming/features/chat/data/badzy_chat_service.dart';
+import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_orchestrator_service.dart';
@@ -13,11 +19,20 @@ class ChatCubit extends HydratedCubit<ChatState> {
   ChatCubit() : super(const ChatState()) {
     _orchestratorService = ChatOrchestratorService();
     _historyService = ChatHistoryService();
+    _userService = UserService();
+    _deepSeekService = DeepSeekService();
+    _baDzyChatService = BaDzyChatService();
     _initializeServices();
   }
 
   late final ChatOrchestratorService _orchestratorService;
   late final ChatHistoryService _historyService;
+  late final UserService _userService;
+  late final DeepSeekService _deepSeekService;
+  late final BaDzyChatService _baDzyChatService;
+
+  /// Текущий entrypoint для чата (сохраняется после инициализации)
+  ChatEntrypointEntity? _currentEntrypoint;
 
   /// Инициализация всех сервисов
   Future<void> _initializeServices() async {
@@ -46,12 +61,26 @@ class ChatCubit extends HydratedCubit<ChatState> {
   // МЕТОДЫ УПРАВЛЕНИЯ ИНТЕРФЕЙСОМ
   // ===============================================
 
-  /// Показ начального сообщения от бота
-  void showInitialMessage() {
-    debugPrint('[ChatCubit] Показываем начальное сообщение');
+  /// Показ начального сообщения от бота в зависимости от типа entrypoint
+  void showInitialMessage(ChatEntrypointEntity entrypoint) {
+    debugPrint(
+      '[ChatCubit] Показываем начальное сообщение для ${entrypoint.runtimeType}',
+    );
+
+    // [ChatCubit] Сохраняем entrypoint для дальнейшего использования
+    _currentEntrypoint = entrypoint;
+
+    // [ChatCubit] Если это Ба-Дзы, загружаем существующий чат
+    if (entrypoint is BaDzyEntrypointEntity) {
+      _loadBaDzyChat();
+      return;
+    }
+
+    // Обычная логика для других типов entrypoint
+    String messageText = '请描述你的问题或你想关注的具体情况。';
 
     final initialBotMessage = MessageEntity(
-      text: '请描述你的问题或你想关注的具体情况。',
+      text: messageText,
       isMe: false,
       timestamp: DateTime.now(),
     );
@@ -115,8 +144,16 @@ class ChatCubit extends HydratedCubit<ChatState> {
       ),
     );
 
+    // [ChatCubit] Сохраняем сообщение в чат Ба-Дзы, если это BaDzy entrypoint
+    if (_currentEntrypoint is BaDzyEntrypointEntity) {
+      _saveBaDzyMessage(newMessage);
+    }
+
     // Определяем тип обработки сообщения
-    if (state.hasHexagramContext) {
+    if (_currentEntrypoint is BaDzyEntrypointEntity) {
+      // [ChatCubit] Специальная обработка для Ба-Дзы
+      _handleBaDzyMessage(state.messages[0].text, state.messages);
+    } else if (state.hasHexagramContext) {
       // Есть контекст последнего гадания - обрабатываем как последующий вопрос
       debugPrint(
         '[ChatCubit] Обрабатываем как последующий вопрос (есть контекст гадания)',
@@ -135,6 +172,13 @@ class ChatCubit extends HydratedCubit<ChatState> {
   Future<void> _handleNewQuestion(String question) async {
     debugPrint('[ChatCubit] Обработка нового вопроса');
 
+    // [ChatCubit] Проверяем, если это BaDzy entrypoint - обрабатываем по-особому
+    if (_currentEntrypoint is BaDzyEntrypointEntity) {
+      await _handleBaDzyBirthPlace(question);
+      return;
+    }
+
+    // Обычная обработка для других entrypoint'ов
     // Добавляем вопрос к контексту
     final updatedQuestionContext = List<String>.from(
       state.currentQuestionContext,
@@ -262,6 +306,12 @@ class ChatCubit extends HydratedCubit<ChatState> {
     try {
       debugPrint('[ChatCubit] Начинаем сохранение истории чата');
 
+      // [ChatCubit] НЕ сохраняем чаты Ба-Дзы в обычной истории
+      if (_currentEntrypoint is BaDzyEntrypointEntity) {
+        debugPrint('[ChatCubit] Чат Ба-Дзы не сохраняется в обычной истории');
+        return;
+      }
+
       // Исключаем streaming сообщения
       final filteredMessages =
           state.messages.where((message) => !message.isStreaming).toList();
@@ -385,6 +435,12 @@ class ChatCubit extends HydratedCubit<ChatState> {
     );
 
     _replaceLoadingMessage(responseMessage);
+
+    // [ChatCubit] Сохраняем ответ в чат Ба-Дзы, если это BaDzy entrypoint
+    // НО ТОЛЬКО если НЕ включен streaming (иначе будет дублирование при завершении)
+    if (_currentEntrypoint is BaDzyEntrypointEntity && !enableStreaming) {
+      _saveBaDzyMessage(responseMessage);
+    }
 
     // Настраиваем streaming, если нужно
     if (enableStreaming) {
@@ -611,10 +667,20 @@ class ChatCubit extends HydratedCubit<ChatState> {
     );
 
     if (messageIndex != -1) {
-      updatedMessages[messageIndex] = updatedMessages[messageIndex].copyWith(
+      final updatedMessage = updatedMessages[messageIndex].copyWith(
         isStreaming: false,
       );
+      updatedMessages[messageIndex] = updatedMessage;
+
       emit(state.copyWith(messages: updatedMessages));
+
+      // [ChatCubit] Обновляем сообщение в чате Ба-Дзы после завершения streaming
+      if (_currentEntrypoint is BaDzyEntrypointEntity) {
+        _saveBaDzyMessage(updatedMessage);
+
+        // [ChatCubit] Дополнительно сохраняем как гороскоп, если это первый ответ от агента
+        _saveBaDzyHoroscopeIfNeeded(updatedMessage);
+      }
 
       // Сохраняем чат в историю после завершения streaming
       _saveOrUpdateChatHistory();
@@ -643,6 +709,308 @@ class ChatCubit extends HydratedCubit<ChatState> {
   }
 
   // ===============================================
+  // СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ БА-ДЗЫ
+  // ===============================================
+
+  /// Обработка сообщения для Ба-Дзы (может быть первое место рождения или последующий вопрос)
+  Future<void> _handleBaDzyMessage(
+    String message,
+    List<MessageEntity> currentMessages,
+  ) async {
+    debugPrint('[ChatCubit] Обработка сообщения Ба-Дзы: $message');
+
+    try {
+      // [ChatCubit] Проверяем, есть ли уже гороскоп (значит это последующий вопрос)
+      final hasHoroscope = await _baDzyChatService.hasBaDzyHoroscope();
+
+      if (hasHoroscope) {
+        // [ChatCubit] Есть гороскоп - обрабатываем как последующий вопрос с историей
+        await _handleBaDzyFollowUpQuestion(message, currentMessages);
+      } else {
+        // [ChatCubit] Нет гороскопа - обрабатываем как первое сообщение с местом рождения
+        await _handleBaDzyBirthPlace(message);
+      }
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при обработке сообщения Ба-Дзы: $e');
+      addBotMessage(
+        'Произошла ошибка при обработке сообщения. Пожалуйста, попробуйте еще раз.',
+      );
+    }
+  }
+
+  /// Обработка последующего вопроса для Ба-Дзы с использованием истории чата
+  Future<void> _handleBaDzyFollowUpQuestion(
+    String question,
+    List<MessageEntity> currentMessages,
+  ) async {
+    debugPrint('[ChatCubit] Обработка последующего вопроса Ба-Дзы: $question');
+
+    try {
+      // [ChatCubit] Показываем индикатор загрузки
+      _showLoadingMessage();
+
+      // [ChatCubit] Преобразуем историю сообщений в формат DeepSeek
+      final conversationHistory = _convertMessagesToDeepSeekHistory(
+        currentMessages,
+      );
+
+      debugPrint(
+        '[ChatCubit] История чата Ба-Дзы: ${conversationHistory.length} сообщений',
+      );
+
+      // [ChatCubit] Отправляем вопрос агенту с полной историей
+      final response = await _deepSeekService.sendMessage(
+        agentType: AgentType.bazsu,
+        message: question,
+        history: conversationHistory,
+      );
+
+      debugPrint(
+        '[ChatCubit] Получен ответ от агента Ба-Дзы на последующий вопрос',
+      );
+
+      // [ChatCubit] Показываем ответ пользователю
+      _showResponseMessage(response, enableStreaming: true);
+    } catch (e, stackTrace) {
+      debugPrint(
+        '[ChatCubit] ОШИБКА при обработке последующего вопроса Ба-Дзы: $e',
+      );
+      debugPrint('[ChatCubit] StackTrace: $stackTrace');
+
+      addBotMessage(
+        'Произошла ошибка при обработке вашего вопроса. Пожалуйста, попробуйте еще раз.',
+      );
+    }
+  }
+
+  /// Преобразование MessageEntity в DeepSeekMessage с умным усечением истории
+  List<DeepSeekMessage> _convertMessagesToDeepSeekHistory(
+    List<MessageEntity> messages,
+  ) {
+    debugPrint('[ChatCubit] Преобразование истории сообщений для Ба-Дзы');
+
+    // [ChatCubit] Фильтруем только завершенные сообщения (не streaming)
+    final filteredMessages =
+        messages.where((message) => !message.isStreaming).toList();
+
+    debugPrint(
+      '[ChatCubit] Отфильтрованных сообщений: ${filteredMessages.length}',
+    );
+
+    // [ChatCubit] Реверсируем для хронологического порядка (oldest to newest)
+    final chronologicalMessages = filteredMessages.reversed.toList();
+
+    List<MessageEntity> messagesToConvert;
+
+    // [ChatCubit] Применяем умное усечение если больше 50 сообщений
+    if (chronologicalMessages.length > 50) {
+      debugPrint(
+        '[ChatCubit] Применяем умное усечение истории: ${chronologicalMessages.length} сообщений',
+      );
+
+      // [ChatCubit] Берем первые 3 сообщения + последние 50 сообщений
+      final firstThree = chronologicalMessages.take(3).toList();
+      final lastFifty =
+          chronologicalMessages
+              .skip(chronologicalMessages.length - 50)
+              .toList();
+
+      // [ChatCubit] Объединяем, избегая дублирования
+      messagesToConvert = <MessageEntity>[];
+      messagesToConvert.addAll(firstThree);
+
+      // [ChatCubit] Добавляем последние 50, только если они не пересекаются с первыми 3
+      for (final message in lastFifty) {
+        if (!firstThree.contains(message)) {
+          messagesToConvert.add(message);
+        }
+      }
+
+      debugPrint(
+        '[ChatCubit] После усечения: ${messagesToConvert.length} сообщений',
+      );
+      debugPrint(
+        '[ChatCubit] Первые 3: ${firstThree.length}, последние уникальные: ${messagesToConvert.length - firstThree.length}',
+      );
+    } else {
+      messagesToConvert = chronologicalMessages;
+      debugPrint(
+        '[ChatCubit] Усечение не требуется: ${messagesToConvert.length} сообщений',
+      );
+    }
+
+    // [ChatCubit] Преобразуем в DeepSeekMessage
+    final deepSeekMessages =
+        messagesToConvert.map((message) {
+          return DeepSeekMessage(
+            role: message.isMe ? 'user' : 'assistant',
+            content: message.text,
+          );
+        }).toList();
+
+    debugPrint(
+      '[ChatCubit] Конвертировано в DeepSeek формат: ${deepSeekMessages.length} сообщений',
+    );
+
+    return deepSeekMessages;
+  }
+
+  /// Загрузка существующего чата Ба-Дзы или создание нового
+  Future<void> _loadBaDzyChat() async {
+    try {
+      debugPrint('[ChatCubit] Загружаем чат Ба-Дзы');
+
+      // [ChatCubit] Загружаем существующие сообщения Ба-Дзы
+      final existingMessages = await _baDzyChatService.loadBaDzyMessages();
+
+      if (existingMessages.isNotEmpty) {
+        // Есть существующий чат - загружаем его
+        debugPrint(
+          '[ChatCubit] Найден существующий чат Ба-Дзы с ${existingMessages.length} сообщениями',
+        );
+
+        // [ChatCubit] Убираем флаг streaming у всех загруженных сообщений
+        // чтобы избежать повторного запуска стриминга при повторном входе
+        final messagesWithoutStreaming =
+            existingMessages.map((message) {
+              return message.copyWith(isStreaming: false);
+            }).toList();
+
+        emit(state.copyWith(messages: messagesWithoutStreaming));
+      } else {
+        // Нет существующего чата - создаем новый с приветственным сообщением
+        debugPrint('[ChatCubit] Создаем новый чат Ба-Дзы');
+
+        final initialBotMessage = MessageEntity(
+          text: 'пожалуйста напиши место своего рождения',
+          isMe: false,
+          timestamp: DateTime.now(),
+        );
+
+        final messages = [initialBotMessage];
+
+        // Сохраняем приветственное сообщение в чат Ба-Дзы
+        await _baDzyChatService.saveBaDzyMessages(messages);
+
+        emit(state.copyWith(messages: messages));
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[ChatCubit] ОШИБКА при загрузке чата Ба-Дзы: $e');
+      debugPrint('[ChatCubit] StackTrace: $stackTrace');
+
+      // В случае ошибки показываем стандартное сообщение
+      final initialBotMessage = MessageEntity(
+        text: 'пожалуйста напиши место своего рождения',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      emit(state.copyWith(messages: [initialBotMessage]));
+    }
+  }
+
+  /// Сохранение сообщения в чат Ба-Дзы
+  Future<void> _saveBaDzyMessage(MessageEntity message) async {
+    try {
+      debugPrint('[ChatCubit] Сохраняем сообщение в чат Ба-Дзы');
+      await _baDzyChatService.addMessageToBaDzyChat(message);
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при сохранении сообщения Ба-Дзы: $e');
+    }
+  }
+
+  /// Сохранение гороскопа Ба-Дзы, если это первый ответ от агента
+  Future<void> _saveBaDzyHoroscopeIfNeeded(MessageEntity message) async {
+    try {
+      // [ChatCubit] Проверяем, что это сообщение от бота (не от пользователя)
+      if (message.isMe) {
+        return;
+      }
+
+      // [ChatCubit] Проверяем, есть ли уже сохраненный гороскоп
+      final hasExistingHoroscope = await _baDzyChatService.hasBaDzyHoroscope();
+      if (hasExistingHoroscope) {
+        debugPrint(
+          '[ChatCubit] Гороскоп уже существует, пропускаем сохранение',
+        );
+        return;
+      }
+
+      // [ChatCubit] Проверяем, что это содержательный ответ (не приветственное сообщение)
+      if (message.text.contains('место своего рождения') ||
+          message.text.length < 50) {
+        debugPrint(
+          '[ChatCubit] Сообщение слишком короткое для гороскопа, пропускаем',
+        );
+        return;
+      }
+
+      // [ChatCubit] Проверяем, что в чате есть сообщение пользователя (место рождения)
+      final userMessages = state.messages.where((m) => m.isMe).toList();
+      if (userMessages.isEmpty) {
+        debugPrint(
+          '[ChatCubit] Нет сообщений пользователя, пропускаем сохранение гороскопа',
+        );
+        return;
+      }
+
+      debugPrint('[ChatCubit] Сохраняем сообщение как гороскоп Ба-Дзы');
+      await _baDzyChatService.saveBaDzyHoroscope(message);
+      debugPrint('[ChatCubit] Гороскоп Ба-Дзы успешно сохранен');
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при сохранении гороскопа Ба-Дзы: $e');
+    }
+  }
+
+  /// Обработка места рождения для Ба-Дзы гадания
+  Future<void> _handleBaDzyBirthPlace(String birthPlace) async {
+    debugPrint('[ChatCubit] Обработка места рождения для Ба-Дзы: $birthPlace');
+
+    try {
+      // [ChatCubit] Показываем индикатор загрузки
+      _showLoadingMessage();
+
+      // [ChatCubit] Получаем данные пользователя (дата и время рождения)
+      final userProfile = await _userService.getUserProfile();
+
+      if (userProfile == null) {
+        debugPrint('[ChatCubit] ОШИБКА: Профиль пользователя не найден');
+        addBotMessage(
+          'Не удалось получить данные о вашем рождении. Пожалуйста, заполните профиль в настройках.',
+        );
+        return;
+      }
+
+      // [ChatCubit] Формируем данные для отправки агенту
+      final baDzyData = {
+        'birthDate': userProfile.formattedBirthDate,
+        'birthTime': userProfile.formattedBirthTime ?? 'неизвестно',
+        'birthPlace': birthPlace.trim(),
+      };
+
+      debugPrint('[ChatCubit] Отправляем данные Ба-Дзы агенту: $baDzyData');
+
+      // [ChatCubit] Отправляем данные агенту bazsu
+      final response = await _deepSeekService.sendMessage(
+        agentType: AgentType.bazsu,
+        message: json.encode(baDzyData),
+      );
+
+      debugPrint('[ChatCubit] Получен ответ от агента Ба-Дзы');
+
+      // [ChatCubit] Показываем ответ пользователю
+      _showResponseMessage(response, enableStreaming: true);
+    } catch (e, stackTrace) {
+      debugPrint('[ChatCubit] ОШИБКА при обработке Ба-Дзы: $e');
+      debugPrint('[ChatCubit] StackTrace: $stackTrace');
+
+      addBotMessage(
+        'Произошла ошибка при анализе ваших данных. Пожалуйста, попробуйте еще раз.',
+      );
+    }
+  }
+
+  // ===============================================
   // ПУБЛИЧНЫЕ МЕТОДЫ ДЛЯ UI
   // ===============================================
 
@@ -666,12 +1034,81 @@ class ChatCubit extends HydratedCubit<ChatState> {
       ),
     );
 
+    // [ChatCubit] Сохраняем сообщение бота в чат Ба-Дзы, если это BaDzy entrypoint
+    if (_currentEntrypoint is BaDzyEntrypointEntity) {
+      _saveBaDzyMessage(newMessage);
+    }
+
     // Настраиваем streaming, если нужно
     if (enableStreaming) {
       _orchestratorService.setupMessageStreaming(
         message: newMessage,
         onStreamingComplete: () => _stopMessageStreaming(newMessage),
       );
+    }
+  }
+
+  /// Загрузка гороскопа Ба-Дзы
+  Future<MessageEntity?> loadBaDzyHoroscope() async {
+    try {
+      return await _baDzyChatService.loadBaDzyHoroscope();
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при загрузке гороскопа Ба-Дзы: $e');
+      return null;
+    }
+  }
+
+  /// Проверка существования гороскопа Ба-Дзы
+  Future<bool> hasBaDzyHoroscope() async {
+    try {
+      return await _baDzyChatService.hasBaDzyHoroscope();
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при проверке гороскопа Ба-Дзы: $e');
+      return false;
+    }
+  }
+
+  /// Получение даты создания гороскопа Ба-Дзы
+  Future<DateTime?> getBaDzyHoroscopeDate() async {
+    try {
+      return await _baDzyChatService.getBaDzyHoroscopeDate();
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при получении даты гороскопа Ба-Дзы: $e');
+      return null;
+    }
+  }
+
+  /// Очистка чата Ба-Дзы в режиме дебага
+  Future<void> clearBaDzyChat() async {
+    if (_currentEntrypoint is! BaDzyEntrypointEntity) {
+      debugPrint('[ChatCubit] Попытка очистки Ба-Дзы для не-Ба-Дзы entrypoint');
+      return;
+    }
+
+    try {
+      debugPrint('[ChatCubit] Очищаем чат Ба-Дзы');
+
+      // Очищаем сохраненный чат (включая гороскоп)
+      await _baDzyChatService.clearBaDzyChat();
+
+      // Создаем новое начальное сообщение
+      final initialBotMessage = MessageEntity(
+        text: 'пожалуйста напиши место своего рождения',
+        isMe: false,
+        timestamp: DateTime.now(),
+      );
+
+      final messages = [initialBotMessage];
+
+      // Сохраняем новое начальное сообщение
+      await _baDzyChatService.saveBaDzyMessages(messages);
+
+      // Обновляем состояние
+      emit(state.copyWith(messages: messages));
+
+      debugPrint('[ChatCubit] Чат Ба-Дзы успешно очищен и сброшен');
+    } catch (e) {
+      debugPrint('[ChatCubit] ОШИБКА при очистке чата Ба-Дзы: $e');
     }
   }
 

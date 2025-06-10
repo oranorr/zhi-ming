@@ -31,6 +31,15 @@ class BazsuEntrypointEntity extends ChatEntrypointEntity {
   String? get predefinedQuestion => null;
 }
 
+/// Entrypoint для гадания Ба-Дзы (Four Pillars of Destiny)
+/// Представляет собой китайскую астрологическую систему предсказаний
+class BaDzyEntrypointEntity extends ChatEntrypointEntity {
+  BaDzyEntrypointEntity() : super();
+
+  @override
+  String? get predefinedQuestion => null;
+}
+
 class OnboardingEntrypointEntity extends ChatEntrypointEntity {
   OnboardingEntrypointEntity() : super();
 

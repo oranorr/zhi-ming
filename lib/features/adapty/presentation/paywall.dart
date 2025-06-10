@@ -23,7 +23,21 @@ import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 /// - Плавные анимации и хэптик фидбек
 /// - Четкая визуальная иерархия информации
 class Paywall extends StatefulWidget {
-  const Paywall({super.key});
+  const Paywall({
+    super.key,
+    this.isFirstReading = false,
+    this.onReturnToChat,
+    this.onClearChat,
+  });
+
+  /// Первое ли это гадание пользователя
+  final bool isFirstReading;
+
+  /// Callback для возврата в чат (для новой логики после встряхивания)
+  final VoidCallback? onReturnToChat;
+
+  /// Callback для очистки чата при закрытии paywall (для повторных гаданий)
+  final VoidCallback? onClearChat;
 
   @override
   State<Paywall> createState() => _PaywallState();
@@ -48,7 +62,7 @@ class _PaywallState extends State<Paywall> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
         child: Stack(
           alignment: Alignment.center,
@@ -56,7 +70,7 @@ class _PaywallState extends State<Paywall> with SingleTickerProviderStateMixin {
             // **Основной цветной градиент**
             // Создает базовый фон с переходами от зеленого к фиолетовому
             // Использует 4 цвета с определенными позициями для плавности
-            DecoratedBox(
+            const DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
@@ -75,7 +89,7 @@ class _PaywallState extends State<Paywall> with SingleTickerProviderStateMixin {
             // **Белый градиент поверх для софт эффекта**
             // Добавляет дополнительную мягкость и читаемость тексту
             // Согласно Apple HIG - обеспечиваем хороший контраст
-            Opacity(
+            const Opacity(
               opacity: 0.42,
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -92,7 +106,11 @@ class _PaywallState extends State<Paywall> with SingleTickerProviderStateMixin {
               ),
             ),
             // Основное содержимое пейволла
-            _PaywallBody(),
+            _PaywallBody(
+              isFirstReading: widget.isFirstReading,
+              onReturnToChat: widget.onReturnToChat,
+              onClearChat: widget.onClearChat,
+            ),
           ],
         ),
       ),
@@ -107,7 +125,21 @@ class _PaywallState extends State<Paywall> with SingleTickerProviderStateMixin {
 /// так как все продукты предзагружаются при старте приложения
 /// в синглтоне AdaptyRepositoryImpl
 class _PaywallBody extends StatefulWidget {
-  const _PaywallBody();
+  const _PaywallBody({
+    super.key,
+    this.isFirstReading = false,
+    this.onReturnToChat,
+    this.onClearChat,
+  });
+
+  /// Первое ли это гадание пользователя
+  final bool isFirstReading;
+
+  /// Callback для возврата в чат
+  final VoidCallback? onReturnToChat;
+
+  /// Callback для очистки чата при закрытии paywall (для повторных гаданий)
+  final VoidCallback? onClearChat;
 
   @override
   State<_PaywallBody> createState() => __PaywallBodyState();
@@ -379,14 +411,22 @@ class __PaywallBodyState extends State<_PaywallBody>
                   padding: EdgeInsets.all(20.w),
                   child: Zbutton(
                     action: () async {
-                      /// Возврат на домашний экран после успешной покупки
-                      /// Очищаем весь стек навигации для чистого состояния
-                      await Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(
-                          builder: (context) => const HomeScreen(),
-                        ),
-                        (route) => false,
-                      );
+                      /// НОВАЯ ЛОГИКА: после покупки поведение зависит от контекста
+                      if (widget.onReturnToChat != null) {
+                        // Возврат в чат после покупки
+                        debugPrint('[Paywall] Покупка успешна - возврат в чат');
+                        widget.onReturnToChat!();
+                        Navigator.of(context).pop();
+                      } else {
+                        /// Возврат на домашний экран после успешной покупки
+                        /// Очищаем весь стек навигации для чистого состояния
+                        await Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(
+                            builder: (context) => const HomeScreen(),
+                          ),
+                          (route) => false,
+                        );
+                      }
                     },
                     isLoading: false,
                     isActive: true,
@@ -492,12 +532,41 @@ class __PaywallBodyState extends State<_PaywallBody>
                 /// Защищает от потери прогресса покупки
                 if (isPurchasing || isRestoring) return;
 
-                /// Закрытие paywall и возврат на домашний экран
-                /// Очищаем стек навигации для согласованности
-                await Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  (route) => false,
-                );
+                /// НОВАЯ ЛОГИКА: разное поведение в зависимости от типа показа paywall
+                if (widget.onReturnToChat != null) {
+                  // Если есть callback для возврата в чат - это новая логика
+                  if (widget.isFirstReading) {
+                    // Первое гадание - просто возвращаемся в чат
+                    debugPrint(
+                      '[Paywall] Первое гадание - возврат в чат через pop',
+                    );
+                    widget.onReturnToChat!();
+                    Navigator.of(context).pop();
+                  } else {
+                    // Повторное гадание - очищаем чат и переходим домой
+                    debugPrint(
+                      '[Paywall] Повторное гадание - очистка чата и переход на домашний экран',
+                    );
+
+                    // Очищаем чат перед переходом домой
+                    widget.onClearChat?.call();
+
+                    await Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (context) => const HomeScreen(),
+                      ),
+                      (route) => false,
+                    );
+                  }
+                } else {
+                  // Старая логика - домашний экран
+                  /// Закрытие paywall и возврат на домашний экран
+                  /// Очищаем стек навигации для согласованности
+                  await Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const HomeScreen()),
+                    (route) => false,
+                  );
+                }
               },
               icon: Icon(
                 Icons.close,

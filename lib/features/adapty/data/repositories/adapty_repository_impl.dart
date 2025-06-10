@@ -1130,4 +1130,147 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
       return false;
     }
   }
+
+  /// Сброс флага бесплатного гадания (для тестирования)
+  /// [AdaptyRepositoryImpl] Метод для ручного сброса флага использования бесплатного гадания
+  @override
+  @visibleForTesting
+  Future<void> resetFreeReadingFlag() async {
+    try {
+      await _storage.write(key: _hasUsedFreeReadingKey, value: 'false');
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🔄 Флаг бесплатного гадания сброшен в false',
+      );
+
+      await trackEvent(
+        'free_reading_flag_reset',
+        parameters: {
+          'timestamp': DateTime.now().toIso8601String(),
+          'platform': Platform.operatingSystem,
+        },
+      );
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] ❌ Ошибка сброса флага бесплатного гадания: $e',
+      );
+    }
+  }
+
+  /// Сброс счетчика фоллоу-ап вопросов (для тестирования)
+  /// [AdaptyRepositoryImpl] Метод для ручного сброса счетчика фоллоу-ап вопросов
+  @override
+  @visibleForTesting
+  Future<void> resetFollowUpQuestionsCount() async {
+    try {
+      await _storage.write(
+        key: _followUpQuestionsCountKey,
+        value: _maxFollowUpQuestions.toString(),
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 🔄 Счетчик фоллоу-ап вопросов сброшен до $_maxFollowUpQuestions',
+      );
+
+      await trackEvent(
+        'follow_up_questions_reset',
+        parameters: {
+          'count': _maxFollowUpQuestions,
+          'timestamp': DateTime.now().toIso8601String(),
+          'platform': Platform.operatingSystem,
+        },
+      );
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] ❌ Ошибка сброса счетчика фоллоу-ап вопросов: $e',
+      );
+    }
+  }
+
+  /// Полный сброс всех данных пользователя (для тестирования)
+  /// [AdaptyRepositoryImpl] Метод для полного сброса состояния пользователя
+  @override
+  @visibleForTesting
+  Future<void> resetUserData() async {
+    debugPrint(
+      '[AdaptyRepositoryImpl] 🔄 Начинаем полный сброс данных пользователя...',
+    );
+
+    await resetFreeReadingFlag();
+    await resetFollowUpQuestionsCount();
+
+    if (_isRunningOnEmulator) {
+      await clearEmulatorSubscription();
+    }
+
+    debugPrint(
+      '[AdaptyRepositoryImpl] ✅ Полный сброс данных пользователя завершен',
+    );
+  }
+
+  /// Детальное логирование состояния пользователя для отладки
+  /// [AdaptyRepositoryImpl] Выводит все данные о состоянии пользователя в лог
+  @visibleForTesting
+  Future<void> logUserState() async {
+    debugPrint('');
+    debugPrint(
+      '[AdaptyRepositoryImpl] 📊 === ДЕТАЛЬНОЕ СОСТОЯНИЕ ПОЛЬЗОВАТЕЛЯ ===',
+    );
+
+    try {
+      // Получаем все флаги и счетчики
+      final hasUsedFreeReading = await _getHasUsedFreeReading();
+      final remainingFollowUpQuestions = await _getRemainingFollowUpQuestions();
+      final remainingFreeRequests = await _getRemainingFreeRequests();
+
+      // Получаем статус подписки
+      final subscriptionStatus = await getSubscriptionStatus();
+
+      debugPrint('[AdaptyRepositoryImpl] 📊 Флаги локального хранения:');
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   hasUsedFreeReading: $hasUsedFreeReading',
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   remainingFollowUpQuestions: $remainingFollowUpQuestions',
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   remainingFreeRequests: $remainingFreeRequests',
+      );
+
+      debugPrint('[AdaptyRepositoryImpl] 📊 Статус подписки:');
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   isActive: ${subscriptionStatus.isActive}',
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   hasPremiumAccess: ${subscriptionStatus.hasPremiumAccess}',
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   canStartNewReading: ${subscriptionStatus.canStartNewReading}',
+      );
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   canAskFollowUpQuestion: ${subscriptionStatus.canAskFollowUpQuestion}',
+      );
+
+      debugPrint('[AdaptyRepositoryImpl] 📊 Платформа:');
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊   isRunningOnEmulator: $_isRunningOnEmulator',
+      );
+      debugPrint('[AdaptyRepositoryImpl] 📊   kDebugMode: $kDebugMode');
+
+      if (_isRunningOnEmulator) {
+        final emulatorSubscription = await _storage.read(
+          key: _emulatorSubscriptionKey,
+        );
+        debugPrint('[AdaptyRepositoryImpl] 📊 Эмулятор:');
+        debugPrint(
+          '[AdaptyRepositoryImpl] 📊   emulatorSubscriptionActive: $emulatorSubscription',
+        );
+      }
+    } catch (e) {
+      debugPrint(
+        '[AdaptyRepositoryImpl] 📊 ❌ Ошибка при получении состояния: $e',
+      );
+    }
+
+    debugPrint('[AdaptyRepositoryImpl] 📊 === КОНЕЦ ДЕТАЛЬНОГО СОСТОЯНИЯ ===');
+    debugPrint('');
+  }
 }

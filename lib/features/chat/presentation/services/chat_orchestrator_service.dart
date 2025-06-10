@@ -41,25 +41,27 @@ class ChatOrchestratorService {
     return _subscriptionService.getSubscriptionStatus();
   }
 
+  /// Генерация гексаграммы из значений линий
+  Future<HexagramPair> generateHexagramFromLines(List<int> lineValues) async {
+    return _hexagramService.generateHexagramFromLines(lineValues);
+  }
+
+  /// Отметить использование бесплатного гадания
+  Future<void> markFreeReadingAsUsed() async {
+    return _subscriptionService.markFreeReadingAsUsed();
+  }
+
   /// Валидация пользовательского запроса
   Future<ValidationResult> validateUserRequest(
     List<String> questionContext,
   ) async {
-    // [ChatOrchestratorService] Проверяем возможность начать новое гадание
-    final canStartReading = await _subscriptionService.canStartNewReading();
+    // [ChatOrchestratorService] НОВАЯ ЛОГИКА: ВСЕГДА разрешаем задать вопрос и сделать броски
+    // Проверка подписки происходит ТОЛЬКО ПОСЛЕ бросков монет в processAfterShaking
+    debugPrint(
+      '[ChatOrchestratorService] Разрешаем задать вопрос и сделать броски для любого гадания',
+    );
 
-    if (!canStartReading) {
-      debugPrint(
-        '[ChatOrchestratorService] Нельзя начать новое гадание - показываем пейвол',
-      );
-      return ValidationResult.error(
-        message:
-            'Вы уже использовали свое бесплатное гадание. '
-            'Для продолжения необходимо оформить подписку.',
-      );
-    }
-
-    // Если запрос возможен, валидируем его содержание
+    // Просто валидируем содержание вопроса, не проверяя подписку
     return _validationService.validateUserRequest(questionContext);
   }
 
@@ -116,16 +118,13 @@ class ChatOrchestratorService {
       // Скрываем клавиатуру
       await SystemChannels.textInput.invokeMethod('TextInput.hide');
 
-      // [ChatOrchestratorService] Проверяем возможность начать новое гадание
-      final canStartReading = await _subscriptionService.canStartNewReading();
-
-      if (!canStartReading) {
-        return ShakeProcessingResult.paywallRequired(
-          message:
-              'Вы уже использовали свое бесплатное гадание. '
-              'Для продолжения необходимо оформить подписку.',
-        );
-      }
+      // [ChatOrchestratorService] УБИРАЕМ проверку подписки - она теперь происходит в ChatCubit ПОСЛЕ генерации гексаграмм
+      // final canStartReading = await _subscriptionService.canStartNewReading();
+      // if (!canStartReading) {
+      //   return ShakeProcessingResult.paywallRequired(
+      //     message: 'Вы уже использовали свое бесплатное гадание. Для продолжения необходимо оформить подписку.',
+      //   );
+      // }
 
       // Получаем значения линий из сервиса встряхивания
       final List<int> lineValues = shakerService.getLineValues();
@@ -162,8 +161,9 @@ class ChatOrchestratorService {
             secondaryHexagram: hexagramPair.secondary,
           );
 
-      // [ChatOrchestratorService] Отмечаем использование бесплатного гадания ПОСЛЕ успешного получения интерпретации
-      await _subscriptionService.markFreeReadingAsUsed();
+      // [ChatOrchestratorService] УБИРАЕМ отметку использования бесплатного гадания
+      // Эта логика теперь обрабатывается в ChatCubit ПОСЛЕ покупки подписки
+      // await _subscriptionService.markFreeReadingAsUsed();
 
       // Сбрасываем результаты встряхиваний для следующего сеанса
       shakerService.resetCoinThrows();
@@ -339,6 +339,29 @@ class ChatOrchestratorService {
   void dispose() {
     debugPrint('[ChatOrchestratorService] Освобождение ресурсов');
     _streamingService.dispose();
+  }
+
+  // Методы для тестирования и отладки
+
+  /// Сброс флага бесплатного гадания (для тестирования)
+  /// [ChatOrchestratorService] Устанавливает флаг hasUsedFreeReading в false
+  Future<void> resetFreeReadingFlag() async {
+    await _subscriptionService.resetFreeReadingFlag();
+    debugPrint('[ChatOrchestratorService] Флаг бесплатного гадания сброшен');
+  }
+
+  /// Сброс счетчика фоллоу-ап вопросов (для тестирования)
+  /// [ChatOrchestratorService] Восстанавливает максимальное количество фоллоу-ап вопросов
+  Future<void> resetFollowUpQuestionsCount() async {
+    await _subscriptionService.resetFollowUpQuestionsCount();
+    debugPrint('[ChatOrchestratorService] Счетчик фоллоу-ап вопросов сброшен');
+  }
+
+  /// Полный сброс всех данных пользователя (для тестирования)
+  /// [ChatOrchestratorService] Сбрасывает все данные пользователя для чистого состояния
+  Future<void> resetUserData() async {
+    await _subscriptionService.resetUserData();
+    debugPrint('[ChatOrchestratorService] Все данные пользователя сброшены');
   }
 }
 

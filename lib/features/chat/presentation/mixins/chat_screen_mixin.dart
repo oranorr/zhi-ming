@@ -322,11 +322,40 @@ mixin ChatScreenMixin<T extends StatefulWidget> on State<T> {
       // Сбрасываем флаг
       cubit.resetPaywallNavigation();
 
-      // Переходим на paywall
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const Paywall()),
-        (route) => false,
-      );
+      // НОВАЯ ЛОГИКА: проверяем есть ли сохраненный контекст для новой логики
+      if (cubit.hasPendingPaywallContext) {
+        // Новая логика после встряхивания - используем push вместо pushAndRemoveUntil
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (context) => Paywall(
+                  isFirstReading: cubit.isFirstReadingPending,
+                  onReturnToChat: () {
+                    // Callback для возврата в чат после paywall
+                    cubit.handleReturnFromPaywallAfterShaking();
+                  },
+                  onClearChat: () {
+                    // Callback для очистки чата при закрытии paywall для повторных гаданий
+                    cubit.clear();
+                  },
+                ),
+          ),
+        );
+      } else {
+        // Старая логика - переходим на paywall с очисткой стека
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder:
+                (context) => Paywall(
+                  onClearChat: () {
+                    // Для старой логики тоже добавляем очистку чата
+                    cubit.clear();
+                  },
+                ),
+          ),
+          (route) => false,
+        );
+      }
     }
   }
 }

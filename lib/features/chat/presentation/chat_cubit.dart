@@ -11,6 +11,7 @@ import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/models/chat_state.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_orchestrator_service.dart';
 import 'package:zhi_ming/features/chat/presentation/services/chat_validation_service.dart';
+import 'package:zhi_ming/features/chat/presentation/services/hexagram_generation_service.dart';
 import 'package:zhi_ming/features/history/data/chat_history_service.dart';
 
 /// Оптимизированный ChatCubit с делегированием бизнес-логики в сервисы
@@ -33,6 +34,17 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
   /// Текущий entrypoint для чата (сохраняется после инициализации)
   ChatEntrypointEntity? _currentEntrypoint;
+
+  // Поля для новой логики paywall после встряхивания
+  HexagramPair? _pendingHexagramPair;
+  String? _pendingUserQuestion;
+  bool _isFirstReading = false;
+  dynamic _backgroundInterpretationResult;
+
+  /// Геттеры для проверки состояния paywall контекста
+  bool get hasPendingPaywallContext =>
+      _pendingHexagramPair != null && _pendingUserQuestion != null;
+  bool get isFirstReadingPending => _isFirstReading;
 
   /// Инициализация всех сервисов
   Future<void> _initializeServices() async {
@@ -253,7 +265,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
   /// Обработка встряхивания
   Future<void> processAfterShaking(ShakerServiceRepo shakerService) async {
-    debugPrint('[ChatCubit] Обработка встряхивания');
+    debugPrint('[ChatCubit] Обработка встряхивания - НОВАЯ ЛОГИКА');
     debugPrint(
       '[ChatCubit] Состояние кнопки ДО обработки: isButtonAvailable = ${state.isButtonAvailable}',
     );
@@ -274,26 +286,96 @@ class ChatCubit extends HydratedCubit<ChatState> {
       return;
     }
 
-    // Создаем индикатор загрузки
-    _showLoadingMessage();
+    // НОВАЯ ЛОГИКА: Генерируем гексаграммы БЕЗ проверки подписки
+    try {
+      // Получаем значения линий из сервиса встряхивания
+      final List<int> lineValues = shakerService.getLineValues();
+      debugPrint('[ChatCubit] Получены значения линий: $lineValues');
 
-    // Задержка для UX
-    await Future.delayed(const Duration(seconds: 2));
+      // Если не получены все 6 линий, дополняем до полной гексаграммы
+      final List<int> completeLineValues = List<int>.from(lineValues);
+      while (completeLineValues.length < 6) {
+        completeLineValues.add(8); // молодой инь по умолчанию
+      }
 
-    // Обрабатываем через оркестратор
-    final result = await _orchestratorService.processAfterShaking(
-      shakerService: shakerService,
-      userQuestion: userQuestion,
-    );
+      // Генерируем гексаграммы через оркестратор
+      final hexagramPair = await _orchestratorService.generateHexagramFromLines(
+        completeLineValues,
+      );
 
-    // Обрабатываем результат
-    if (result.isSuccess) {
-      await _showHexagramResult(result);
-    } else if (result.requiresPaywall) {
-      _showErrorMessage(result.message);
-      _navigateToPaywall();
-    } else {
-      _showErrorMessage(result.message);
+      debugPrint('[ChatCubit] Сгенерированы гексаграммы:');
+      debugPrint(
+        '  Основная: ${hexagramPair.primary.number} (${hexagramPair.primary.name})',
+      );
+      if (hexagramPair.hasChangingLines) {
+        debugPrint(
+          '  Изменяющаяся: ${hexagramPair.secondary!.number} (${hexagramPair.secondary!.name})',
+        );
+      }
+
+      // Сбрасываем результаты встряхиваний
+      shakerService.resetCoinThrows();
+
+      // Проверяем - первое ли это гадание пользователя
+      final subscriptionStatus =
+          await _orchestratorService.getSubscriptionStatus();
+      final isFirstReading = !subscriptionStatus.hasUsedFreeReading;
+      final hasActiveSubscription = subscriptionStatus.hasPremiumAccess;
+
+      debugPrint('[ChatCubit] Первое гадание: $isFirstReading');
+      debugPrint('[ChatCubit] Есть подписка: $hasActiveSubscription');
+
+      // НОВАЯ ЛОГИКА: Если есть подписка - показываем результат сразу
+      if (hasActiveSubscription) {
+        debugPrint('[ChatCubit] Есть подписка - показываем результат сразу');
+
+        // Показываем индикатор загрузки
+        _showLoadingMessage();
+
+        try {
+          // Получаем интерпретацию от DeepSeek
+          final interpretationResult = await _deepSeekService
+              .interpretHexagramsStructured(
+                question: userQuestion,
+                primaryHexagram: hexagramPair.primary,
+                secondaryHexagram: hexagramPair.secondary,
+              );
+
+          // Создаем результат для показа
+          final result = ShakeProcessingResult.success(
+            hexagramPair: hexagramPair,
+            interpretationResult: interpretationResult,
+            userQuestion: userQuestion,
+            updatedSubscriptionStatus: subscriptionStatus,
+          );
+
+          // Показываем результат
+          await _showHexagramResult(result);
+        } catch (e) {
+          debugPrint('[ChatCubit] Ошибка при получении интерпретации: $e');
+          _showErrorMessage(
+            'Произошла ошибка при получении интерпретации. Пожалуйста, попробуйте еще раз.',
+          );
+        }
+
+        return;
+      }
+
+      // Если нет подписки - сохраняем контекст для возврата из paywall
+      _pendingHexagramPair = hexagramPair;
+      _pendingUserQuestion = userQuestion;
+      _isFirstReading = isFirstReading;
+
+      // Начинаем фоновую генерацию интерпретации
+      _startBackgroundInterpretation(userQuestion, hexagramPair);
+
+      // Показываем paywall
+      _navigateToPaywallAfterShaking(isFirstReading: isFirstReading);
+    } catch (e) {
+      debugPrint('[ChatCubit] Ошибка при генерации гексаграмм: $e');
+      addBotMessage(
+        'Произошла ошибка при обработке гадания. Пожалуйста, попробуйте еще раз.',
+      );
     }
   }
 
@@ -622,25 +704,17 @@ class ChatCubit extends HydratedCubit<ChatState> {
         ),
       );
     } else if (result.isError) {
-      // [ChatCubit] Если валидация вернула ошибку - это может быть ошибка пейвола
-      // Проверяем сообщение на наличие указания на пейвол
-      if (result.message.contains('бесплатное гадание') ||
-          result.message.contains('оформить подписку')) {
-        _showErrorMessage(result.message);
-        _navigateToPaywall();
-      } else {
-        // Обычная ошибка валидации
-        _showErrorMessage(result.message);
-        emit(
-          state.copyWith(
-            isButtonAvailable: result.shouldEnableShaking,
-            currentQuestionContext:
-                result.shouldClearContext
-                    ? const []
-                    : state.currentQuestionContext,
-          ),
-        );
-      }
+      // Обычная ошибка валидации (больше НЕ проверяем paywall - он показывается только после встряхивания)
+      _showErrorMessage(result.message);
+      emit(
+        state.copyWith(
+          isButtonAvailable: result.shouldEnableShaking,
+          currentQuestionContext:
+              result.shouldClearContext
+                  ? const []
+                  : state.currentQuestionContext,
+        ),
+      );
     } else {
       // Обычная ошибка валидации
       _showErrorMessage(result.message);
@@ -1151,27 +1225,15 @@ class ChatCubit extends HydratedCubit<ChatState> {
     );
   }
 
-  /// Проверка возможности начать новое гадание и показ пейвола если нужно
+  /// Проверка возможности начать новое гадание - НОВАЯ ЛОГИКА: ВСЕГДА разрешаем
   Future<bool> checkCanStartNewReading() async {
-    debugPrint('[ChatCubit] Проверка возможности начать новое гадание');
+    debugPrint('[ChatCubit] НОВАЯ ЛОГИКА: Всегда разрешаем начать гадание');
+    debugPrint(
+      '[ChatCubit] Проверка подписки происходит ТОЛЬКО после бросков монет',
+    );
 
-    // Проверяем через оркестратор
-    final shouldShowPaywall = _orchestratorService
-        .shouldNavigateToPaywallForNewReading(
-          hasActiveSubscription: state.hasActiveSubscription,
-          hasUsedFreeReading: state.hasUsedFreeReading,
-        );
-
-    if (shouldShowPaywall) {
-      debugPrint('[ChatCubit] Показываем пейвол для нового гадания');
-      addBotMessage(
-        'Вы уже использовали свое бесплатное гадание. '
-        'Для продолжения необходимо оформить подписку.',
-      );
-      _navigateToPaywall();
-      return false;
-    }
-
+    // НОВАЯ ЛОГИКА: ВСЕГДА разрешаем начать гадание
+    // Проверка подписки будет происходить в processAfterShaking
     return true;
   }
 
@@ -1182,9 +1244,125 @@ class ChatCubit extends HydratedCubit<ChatState> {
     emit(state.copyWith(shouldNavigateToPaywall: true));
   }
 
+  /// Навигация на экран оплаты после встряхивания (новая логика)
+  void _navigateToPaywallAfterShaking({required bool isFirstReading}) {
+    debugPrint(
+      '[ChatCubit] Переход на paywall после встряхивания, первое гадание: $isFirstReading',
+    );
+
+    // НЕ очищаем сообщения - оставляем чат как есть
+    // Устанавливаем специальный флаг для paywall после встряхивания
+    emit(
+      state.copyWith(
+        shouldNavigateToPaywall: true,
+        // Можно добавить дополнительную информацию о типе paywall
+      ),
+    );
+  }
+
+  /// Запуск фоновой генерации интерпретации
+  void _startBackgroundInterpretation(
+    String userQuestion,
+    HexagramPair hexagramPair,
+  ) {
+    debugPrint('[ChatCubit] Запуск фоновой генерации интерпретации');
+
+    // Запускаем асинхронно в фоне
+    () async {
+      try {
+        debugPrint('[ChatCubit] Начинаем фоновую генерацию интерпретации');
+
+        // Получаем интерпретацию от DeepSeek
+        final interpretationResult = await _deepSeekService
+            .interpretHexagramsStructured(
+              question: userQuestion,
+              primaryHexagram: hexagramPair.primary,
+              secondaryHexagram: hexagramPair.secondary,
+            );
+
+        // Сохраняем результат
+        _backgroundInterpretationResult = interpretationResult;
+
+        debugPrint('[ChatCubit] Фоновая интерпретация завершена');
+      } catch (e) {
+        debugPrint('[ChatCubit] Ошибка фоновой интерпретации: $e');
+        _backgroundInterpretationResult = null;
+      }
+    }();
+  }
+
   /// Сброс флага навигации на paywall
   void resetPaywallNavigation() {
     emit(state.copyWith(shouldNavigateToPaywall: false));
+  }
+
+  /// Обработка возврата из paywall после встряхивания
+  Future<void> handleReturnFromPaywallAfterShaking() async {
+    debugPrint('[ChatCubit] Обработка возврата из paywall после встряхивания');
+
+    if (_pendingHexagramPair == null || _pendingUserQuestion == null) {
+      debugPrint(
+        '[ChatCubit] Нет сохраненного контекста для возврата из paywall',
+      );
+      return;
+    }
+
+    // Создаем индикатор загрузки
+    _showLoadingMessage();
+
+    try {
+      // Проверяем есть ли готовая интерпретация из фона
+      dynamic interpretationResult = _backgroundInterpretationResult;
+
+      if (interpretationResult == null) {
+        debugPrint(
+          '[ChatCubit] Фоновая интерпретация не готова, запрашиваем заново',
+        );
+
+        // Получаем интерпретацию от DeepSeek
+        interpretationResult = await _deepSeekService
+            .interpretHexagramsStructured(
+              question: _pendingUserQuestion!,
+              primaryHexagram: _pendingHexagramPair!.primary,
+              secondaryHexagram: _pendingHexagramPair!.secondary,
+            );
+      } else {
+        debugPrint('[ChatCubit] Используем готовую фоновую интерпретацию');
+      }
+
+      // Создаем результат для показа
+      final result = ShakeProcessingResult.success(
+        hexagramPair: _pendingHexagramPair!,
+        interpretationResult: interpretationResult,
+        userQuestion: _pendingUserQuestion!,
+        updatedSubscriptionStatus:
+            await _orchestratorService.getSubscriptionStatus(),
+      );
+
+      // Показываем результат
+      await _showHexagramResult(result);
+
+      // Устанавливаем флаг использования бесплатного гадания ПОСЛЕ покупки подписки
+      // Это необходимо для пользователей, которые ранее не делали гаданий
+      if (_isFirstReading) {
+        await _orchestratorService.markFreeReadingAsUsed();
+        await _updateSubscriptionStatus();
+        debugPrint(
+          '[ChatCubit] Бесплатное гадание помечено как использованное после покупки',
+        );
+      }
+    } catch (e) {
+      debugPrint('[ChatCubit] Ошибка при обработке возврата из paywall: $e');
+      _showErrorMessage(
+        'Произошла ошибка при получении интерпретации. Пожалуйста, попробуйте еще раз.',
+      );
+    } finally {
+      // Очищаем временные данные
+      _pendingHexagramPair = null;
+      _pendingUserQuestion = null;
+      _isFirstReading = false;
+      _backgroundInterpretationResult = null;
+    }
   }
 
   // ===============================================

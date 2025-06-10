@@ -120,6 +120,29 @@ class ChatSubscriptionService {
       remainingFreeRequests: remainingRequests,
     );
   }
+
+  // Методы для тестирования и отладки
+
+  /// Сброс флага бесплатного гадания (для тестирования)
+  /// [ChatSubscriptionService] Устанавливает флаг hasUsedFreeReading в false
+  Future<void> resetFreeReadingFlag() async {
+    await _adaptyRepository.resetFreeReadingFlag();
+    debugPrint('[ChatSubscriptionService] Флаг бесплатного гадания сброшен');
+  }
+
+  /// Сброс счетчика фоллоу-ап вопросов (для тестирования)
+  /// [ChatSubscriptionService] Восстанавливает максимальное количество фоллоу-ап вопросов
+  Future<void> resetFollowUpQuestionsCount() async {
+    await _adaptyRepository.resetFollowUpQuestionsCount();
+    debugPrint('[ChatSubscriptionService] Счетчик фоллоу-ап вопросов сброшен');
+  }
+
+  /// Полный сброс всех данных пользователя (для тестирования)
+  /// [ChatSubscriptionService] Сбрасывает все данные пользователя для чистого состояния
+  Future<void> resetUserData() async {
+    await _adaptyRepository.resetUserData();
+    debugPrint('[ChatSubscriptionService] Все данные пользователя сброшены');
+  }
 }
 
 /// Класс для результата проверки возможности запроса (DEPRECATED)

@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
@@ -22,6 +23,7 @@ class _ProfilePageState extends State<ProfilePage> {
   UserProfile? _userProfile;
   SubscriptionStatus? _subscriptionStatus;
   bool _isLoading = true;
+  bool _isResetting = false;
 
   // Контроллеры для полей
   late TextEditingController _nameController;
@@ -262,6 +264,9 @@ class _ProfilePageState extends State<ProfilePage> {
           // Показываем VIP блок только если есть активная подписка
           if (_subscriptionStatus?.isActive ?? false) _buildVIPBlock(),
 
+          // Раздел отладки (только в debug режиме)
+          if (kDebugMode) ...[SizedBox(height: 40.h), _buildDebugSection()],
+
           SizedBox(height: 100.h),
         ],
       ),
@@ -370,6 +375,90 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Раздел отладки - отображается только в debug режиме
+  Widget _buildDebugSection() {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20.r),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '🔧 Отладка (DEBUG)',
+            style: context.styles.mMedium.copyWith(
+              color: Colors.red[800],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          SizedBox(height: 12.h),
+
+          Text(
+            'Статус подписки:',
+            style: context.styles.sDemilight.copyWith(color: Colors.red[700]),
+          ),
+          Text(
+            'hasUsedFreeReading: ${_subscriptionStatus?.hasUsedFreeReading ?? 'unknown'}',
+            style: context.styles.sDemilight.copyWith(color: Colors.red[600]),
+          ),
+          Text(
+            'canStartNewReading: ${_subscriptionStatus?.canStartNewReading ?? 'unknown'}',
+            style: context.styles.sDemilight.copyWith(color: Colors.red[600]),
+          ),
+          Text(
+            'remainingFollowUpQuestions: ${_subscriptionStatus?.remainingFollowUpQuestions ?? 'unknown'}',
+            style: context.styles.sDemilight.copyWith(color: Colors.red[600]),
+          ),
+
+          SizedBox(height: 16.h),
+
+          // Кнопки для сброса данных
+          Row(
+            children: [
+              Expanded(
+                child: Zbutton(
+                  action: _resetFreeReadingFlag,
+                  isLoading: _isResetting,
+                  isActive: !_isResetting,
+                  text: 'Сброс флага',
+                  textColor: Colors.white,
+                  color: Colors.orange,
+                ),
+              ),
+              SizedBox(width: 8.w),
+              Expanded(
+                child: Zbutton(
+                  action: _resetAllUserData,
+                  isLoading: _isResetting,
+                  isActive: !_isResetting,
+                  text: 'Сброс всех данных',
+                  textColor: Colors.white,
+                  color: Colors.red,
+                ),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 8.h),
+
+          // Кнопка для логирования состояния
+          Zbutton(
+            action: _logUserState,
+            isLoading: false,
+            isActive: true,
+            text: 'Логировать состояние в консоль',
+            textColor: Colors.white,
+            color: Colors.blue,
           ),
         ],
       ),
@@ -573,5 +662,112 @@ class _ProfilePageState extends State<ProfilePage> {
         );
       },
     );
+  }
+
+  /// Сброс флага бесплатного гадания (для отладки)
+  Future<void> _resetFreeReadingFlag() async {
+    try {
+      setState(() {
+        _isResetting = true;
+      });
+
+      await AdaptyRepositoryImpl.instance.resetFreeReadingFlag();
+      await _loadSubscriptionStatus(); // Перезагружаем статус
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Флаг бесплатного гадания сброшен'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('[ProfilePage] Ошибка сброса флага: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка сброса флага: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResetting = false;
+        });
+      }
+    }
+  }
+
+  /// Полный сброс всех данных пользователя (для отладки)
+  Future<void> _resetAllUserData() async {
+    try {
+      setState(() {
+        _isResetting = true;
+      });
+
+      await AdaptyRepositoryImpl.instance.resetUserData();
+      await _loadSubscriptionStatus(); // Перезагружаем статус
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Все данные пользователя сброшены'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('[ProfilePage] Ошибка сброса данных: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка сброса данных: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResetting = false;
+        });
+      }
+    }
+  }
+
+  /// Логирование состояния пользователя в консоль
+  Future<void> _logUserState() async {
+    try {
+      print('[ProfilePage] Логирование состояния пользователя');
+
+      // Детальное логирование через репозиторий
+      await AdaptyRepositoryImpl.instance.logUserState();
+
+      // Логирование информации о пользователе
+      print('Пользователь: $_userProfile');
+      print('Статус подписки UI: $_subscriptionStatus');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Состояние пользователя логировано в консоль'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      print('[ProfilePage] Ошибка логирования состояния пользователя: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка логирования состояния пользователя: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

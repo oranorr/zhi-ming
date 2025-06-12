@@ -12,6 +12,7 @@ import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 import 'package:zhi_ming/features/onboard/data/onboard_repo.dart';
 import 'package:zhi_ming/features/onboard/data/user_profile_service.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';
+import 'package:zhi_ming/features/home/data/recommendations_service.dart';
 
 /// Миксин для управления состоянием экрана онбординга
 mixin OnboardMixin<T extends StatefulWidget> on State<T> {
@@ -26,6 +27,9 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
 
   // Сервис для управления профилем пользователя
   late UserProfileService _userProfileService;
+
+  // Сервис для работы с рекомендациями
+  late RecommendationsService _recommendationsService;
 
   // Контроллеры
   final FocusNode focusNode = FocusNode();
@@ -64,6 +68,7 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
     cubit = context.read<OnboardCubit>();
     _deepSeekService = DeepSeekService();
     _userProfileService = UserProfileService();
+    _recommendationsService = RecommendationsService();
 
     // Проверяем статус онбординга при инициализации
     _checkOnboardingStatus();
@@ -263,11 +268,36 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
             '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
       }
 
+      print('[OnboardMixin] Отправляем данные для анализа личности: $userData');
+
       // Отправляем данные в DeepSeek для анализа
       final response = await _deepSeekService.sendMessage(
         agentType: AgentType.onboarding,
         message: jsonEncode(userData),
       );
+
+      print('[OnboardMixin] Получен анализ личности от DeepSeek');
+
+      // После успешного анализа личности генерируем первичные рекомендации
+      print(
+        '[OnboardMixin] Начинаем генерацию первичных рекомендаций для нового пользователя',
+      );
+
+      final recommendationResult = await _recommendationsService
+          .generateInitialRecommendations(
+            userInterests: selectedInterests,
+            userName: userName,
+          );
+
+      if (recommendationResult.success) {
+        print(
+          '[OnboardMixin] Первичные рекомендации успешно сгенерированы: ${recommendationResult.questionEntities.length} карточек',
+        );
+      } else {
+        print(
+          '[OnboardMixin] Ошибка при генерации первичных рекомендаций: ${recommendationResult.message}',
+        );
+      }
 
       // Создаем сообщение с результатом анализа
       final resultMessage = MessageEntity(
@@ -293,13 +323,37 @@ mixin OnboardMixin<T extends StatefulWidget> on State<T> {
         });
       }
 
-      print('[OnboardMixin] Онбординг успешно завершен, профиль сохранен');
+      print(
+        '[OnboardMixin] Онбординг успешно завершен, профиль сохранен, первичные рекомендации сгенерированы',
+      );
     } catch (e) {
       // В случае ошибки выводим сообщение и продолжаем
       print('[saveInterests] Ошибка при анализе данных: $e');
 
       // Все равно пытаемся сохранить профиль, даже если анализ не удался
       await _saveUserProfile();
+
+      // Пытаемся сгенерировать рекомендации даже при ошибке анализа личности
+      try {
+        print(
+          '[OnboardMixin] Пытаемся сгенерировать рекомендации несмотря на ошибку анализа',
+        );
+        final recommendationResult = await _recommendationsService
+            .generateInitialRecommendations(
+              userInterests: selectedInterests,
+              userName: userName,
+            );
+
+        if (recommendationResult.success) {
+          print(
+            '[OnboardMixin] Резервные рекомендации сгенерированы: ${recommendationResult.questionEntities.length} карточек',
+          );
+        }
+      } catch (recError) {
+        print(
+          '[OnboardMixin] Ошибка при генерации резервных рекомендаций: $recError',
+        );
+      }
 
       if (mounted) {
         setState(() {

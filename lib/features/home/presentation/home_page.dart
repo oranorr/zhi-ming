@@ -10,13 +10,53 @@ import 'package:zhi_ming/features/chat/domain/chat_entrypoint_entity.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_screen.dart';
 import 'package:zhi_ming/features/home/data/local_repo.dart';
+import 'package:zhi_ming/features/home/data/recommendations_service.dart';
+import 'package:zhi_ming/features/home/domain/question_entity.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  final RecommendationsService _recommendationsService =
+      RecommendationsService();
+  List<QuestionEntity> _questions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeAndLoadQuestions();
+  }
+
+  Future<void> _initializeAndLoadQuestions() async {
+    // Инициализируем сервис рекомендаций (загружает сохраненные данные)
+    await _recommendationsService.initialize();
+
+    // Загружаем вопросы после инициализации
+    _loadQuestions();
+  }
+
+  void _loadQuestions() {
+    // Получаем QuestionEntity из RecommendationsService
+    final questions = _recommendationsService.getQuestionEntities();
+
+    // Если рекомендации пусты, используем захардкоженные вопросы как fallback
+    if (questions.isEmpty) {
+      setState(() {
+        _questions = HomeLocalRepo().questions;
+      });
+    } else {
+      setState(() {
+        _questions = questions;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final questions = HomeLocalRepo().questions;
     return CustomScrollView(
       slivers: [
         SliverPersistentHeader(
@@ -34,69 +74,241 @@ class HomePage extends StatelessWidget {
         // SliverToBoxAdapter(child: SizedBox(height: 10.h)),
         SliverList(
           delegate: SliverChildBuilderDelegate(
-            (context, index) => questions[index].buildTile(context),
-            childCount: questions.length,
+            (context, index) => _questions[index].buildTile(context),
+            childCount: _questions.length,
           ),
         ),
-        // Дебажная кнопка в самом низу страницы
+        // Дебажные кнопки в самом низу страницы
         if (kDebugMode)
           SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.all(20.w),
-              child: Center(
-                child: GestureDetector(
-                  onTap: () async {
-                    final repository = AdaptyRepositoryImpl.instance;
-
-                    // Деактивируем подписку
-                    await repository.logout();
-
-                    // Сбрасываем счетчик бесплатных запросов
-                    await repository.initialize();
-
-                    // Обновляем состояние ChatCubit если он доступен
-                    try {
-                      final chatCubit = context.read<ChatCubit>();
-                      await chatCubit.clear(); // Полностью очищаем состояние
-                    } catch (e) {
-                      // ChatCubit может быть недоступен, это нормально
-                      debugPrint('ChatCubit недоступен: $e');
-                    }
-
-                    // Показываем уведомление
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('🔄 Подписка и счетчик сброшены'),
-                          duration: Duration(seconds: 2),
-                          backgroundColor: Colors.orange,
-                        ),
+              child: Column(
+                children: [
+                  // Кнопка для регенерации карточек на основе интересов пользователя
+                  GestureDetector(
+                    onTap: () async {
+                      // [HomePage] Используем RecommendationsService для регенерации
+                      debugPrint(
+                        '[HomePage] Запускаем регенерацию через сервис',
                       );
-                    }
-                  },
-                  child: Container(
-                    padding: EdgeInsets.all(12.w),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.8),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.refresh, color: Colors.white, size: 24.w),
-                        SizedBox(width: 8.w),
-                        Text(
-                          'Debug Reset',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.bold,
+
+                      final result =
+                          await _recommendationsService
+                              .regenerateRecommendations();
+
+                      // Обновляем вопросы после регенерации
+                      _loadQuestions();
+
+                      // Показываем уведомление на основе результата
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              result.success
+                                  ? '🎯 ${result.message}'
+                                  : '❌ ${result.message}',
+                            ),
+                            duration: const Duration(seconds: 2),
+                            backgroundColor:
+                                result.success ? Colors.green : Colors.orange,
                           ),
-                        ),
-                      ],
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.auto_awesome,
+                            color: Colors.white,
+                            size: 24.w,
+                          ),
+                          SizedBox(width: 8.w),
+                          Text(
+                            'Regen',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  SizedBox(height: 12.h),
+                  // Кнопка для очистки сохраненных рекомендаций
+                  GestureDetector(
+                    onTap: () async {
+                      debugPrint('[HomePage] Очищаем сохраненные рекомендации');
+
+                      final success =
+                          await _recommendationsService.clearRecommendations();
+
+                      // Обновляем вопросы после очистки
+                      _loadQuestions();
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? '🗑️ Рекомендации очищены'
+                                  : '❌ Ошибка при очистке',
+                            ),
+                            duration: const Duration(seconds: 2),
+                            backgroundColor: success ? Colors.blue : Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.delete_outline,
+                            color: Colors.white,
+                            size: 24.w,
+                          ),
+                          SizedBox(width: 8.w),
+                          Text(
+                            'Clear Recommendations',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 12.h),
+                  // Кнопка для тестирования переноса новых рекомендаций
+                  GestureDetector(
+                    onTap: () async {
+                      debugPrint(
+                        '[HomePage] Принудительно запускаем проверку и перенос новых рекомендаций',
+                      );
+
+                      // Вызываем инициализацию сервиса заново
+                      await _recommendationsService.initialize();
+
+                      // Обновляем вопросы после инициализации
+                      _loadQuestions();
+
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              '🔄 Проверка новых рекомендаций выполнена',
+                            ),
+                            duration: Duration(seconds: 2),
+                            backgroundColor: Colors.purple,
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.move_up, color: Colors.white, size: 24.w),
+                          SizedBox(width: 8.w),
+                          Text(
+                            'Test Promote New',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 12.h),
+                  // Существующая кнопка сброса
+                  GestureDetector(
+                    onTap: () async {
+                      final repository = AdaptyRepositoryImpl.instance;
+
+                      // Деактивируем подписку
+                      await repository.logout();
+
+                      // Сбрасываем счетчик бесплатных запросов
+                      await repository.initialize();
+
+                      // Обновляем состояние ChatCubit если он доступен
+                      try {
+                        final chatCubit = context.read<ChatCubit>();
+                        await chatCubit.clear(); // Полностью очищаем состояние
+                      } catch (e) {
+                        // ChatCubit может быть недоступен, это нормально
+                        debugPrint('ChatCubit недоступен: $e');
+                      }
+
+                      // Показываем уведомление
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('🔄 Подписка и счетчик сброшены'),
+                            duration: Duration(seconds: 2),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.refresh, color: Colors.white, size: 24.w),
+                          SizedBox(width: 8.w),
+                          Text(
+                            'Debug Reset',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16.sp,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

@@ -4,9 +4,13 @@ import 'package:intl/intl.dart';
 import 'package:zhi_ming/features/chat/domain/message_entity.dart';
 import 'package:zhi_ming/features/onboard/domain/onboard_questions.dart';
 import 'package:zhi_ming/features/onboard/domain/onboard_state.dart';
+import 'package:zhi_ming/features/home/data/recommendations_service.dart';
 
 class OnboardCubit extends HydratedCubit<OnboardState> {
   OnboardCubit() : super(const OnboardState());
+
+  final RecommendationsService _recommendationsService =
+      RecommendationsService();
 
   @override
   OnboardState? fromJson(Map<String, dynamic> json) {
@@ -176,6 +180,29 @@ class OnboardCubit extends HydratedCubit<OnboardState> {
     // Задержка перед отправкой заключительного сообщения
     await Future.delayed(const Duration(milliseconds: 1500));
 
+    // Генерируем первичные рекомендации при завершении онбординга через кубит
+    // Примечание: Этот путь используется для старого процесса онбординга без интересов
+    // Основной процесс с интересами идет через OnboardMixin
+    try {
+      print(
+        '[OnboardCubit] Генерируем базовые рекомендации при завершении онбординга (без интересов)',
+      );
+      final recommendationResult =
+          await _recommendationsService.regenerateRecommendations();
+
+      if (recommendationResult.success) {
+        print(
+          '[OnboardCubit] Базовые рекомендации сгенерированы: ${recommendationResult.questionEntities.length} карточек',
+        );
+      } else {
+        print(
+          '[OnboardCubit] Ошибка при генерации рекомендаций: ${recommendationResult.message}',
+        );
+      }
+    } catch (e) {
+      print('[OnboardCubit] Ошибка при генерации базовых рекомендаций: $e');
+    }
+
     // Добавляем завершающее сообщение
     final botMessage = MessageEntity(
       text:
@@ -193,6 +220,25 @@ class OnboardCubit extends HydratedCubit<OnboardState> {
         isCompleted: true,
       ),
     );
+  }
+
+  /// Метод для генерации первичных рекомендаций
+  /// Может быть вызван из UI для принудительной генерации рекомендаций
+  Future<void> generateInitialRecommendations() async {
+    try {
+      print('[OnboardCubit] Ручной запуск генерации первичных рекомендаций');
+      final result = await _recommendationsService.regenerateRecommendations();
+
+      if (result.success) {
+        print(
+          '[OnboardCubit] Рекомендации успешно сгенерированы: ${result.questionEntities.length} карточек',
+        );
+      } else {
+        print('[OnboardCubit] Ошибка при генерации: ${result.message}');
+      }
+    } catch (e) {
+      print('[OnboardCubit] Исключение при генерации рекомендаций: $e');
+    }
   }
 
   void resetOnboarding() {

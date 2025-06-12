@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:zhi_ming/core/services/user_service.dart';
 import 'package:zhi_ming/core/theme/themes.dart';
+import 'package:zhi_ming/features/adapty/presentation/paywall.dart';
 import 'package:zhi_ming/features/chat/presentation/chat_cubit.dart';
 import 'package:zhi_ming/features/home/presentation/home_screen.dart';
 import 'package:zhi_ming/features/onboard/presentation/onboard_cubit.dart';

@@ -13,6 +13,7 @@ import 'package:zhi_ming/features/chat/presentation/services/chat_orchestrator_s
 import 'package:zhi_ming/features/chat/presentation/services/chat_validation_service.dart';
 import 'package:zhi_ming/features/chat/presentation/services/hexagram_generation_service.dart';
 import 'package:zhi_ming/features/history/data/chat_history_service.dart';
+import 'package:zhi_ming/features/home/data/recommendations_service.dart';
 
 /// Оптимизированный ChatCubit с делегированием бизнес-логики в сервисы
 /// Фокусируется только на управлении состоянием и координации операций
@@ -23,6 +24,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
     _userService = UserService();
     _deepSeekService = DeepSeekService();
     _baDzyChatService = BaDzyChatService();
+    _recommendationsService = RecommendationsService();
     _initializeServices();
   }
 
@@ -31,6 +33,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
   late final UserService _userService;
   late final DeepSeekService _deepSeekService;
   late final BaDzyChatService _baDzyChatService;
+  late final RecommendationsService _recommendationsService;
 
   /// Текущий entrypoint для чата (сохраняется после инициализации)
   ChatEntrypointEntity? _currentEntrypoint;
@@ -652,6 +655,9 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
     // Сохраняем чат в историю после получения результата гексаграммы
     await _saveOrUpdateChatHistory();
+
+    // ГЕНЕРИРУЕМ НОВЫЕ РЕКОМЕНДАЦИИ ПОСЛЕ УСПЕШНОГО ГАДАНИЯ
+    _generateNewRecommendationsAfterDivination();
 
     // Добавляем пояснительное сообщение
     Future.delayed(const Duration(seconds: 1), () {
@@ -1395,6 +1401,33 @@ class ChatCubit extends HydratedCubit<ChatState> {
     await _updateSubscriptionStatus();
 
     debugPrint('[ChatCubit] Состояние полностью очищено');
+  }
+
+  /// Генерация новых рекомендаций после успешного гадания на И Дзин
+  void _generateNewRecommendationsAfterDivination() {
+    debugPrint(
+      '[ChatCubit] Запускаем генерацию новых рекомендаций после гадания',
+    );
+
+    // Запускаем генерацию в фоне, не блокируя UI
+    _recommendationsService
+        .generateNewRecommendationsAfterDivination()
+        .then((result) {
+          if (result.success) {
+            debugPrint(
+              '[ChatCubit] Новые рекомендации после гадания сгенерированы успешно',
+            );
+          } else {
+            debugPrint(
+              '[ChatCubit] Ошибка при генерации новых рекомендаций: ${result.message}',
+            );
+          }
+        })
+        .catchError((error) {
+          debugPrint(
+            '[ChatCubit] Исключение при генерации новых рекомендаций: $error',
+          );
+        });
   }
 
   @override

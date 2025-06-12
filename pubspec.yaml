@@ -1,7 +1,7 @@
 name: zhi_ming
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.1+7
+version: 0.1.1+9 
 
 environment:
   sdk: ^3.7.2
@@ -25,6 +25,7 @@ dependencies:
   shared_preferences: ^2.2.2
   flutter_secure_storage: ^4.2.1
   adapty_flutter: ^3.6.1
+  url_launcher: ^6.2.6
 
 dev_dependencies:
   flutter_test:

@@ -44,7 +44,7 @@ class QuestionEntity {
             },
             child: Container(
               width: double.infinity,
-              height: 75.h,
+              constraints: BoxConstraints(minHeight: 75.h),
               decoration: BoxDecoration(
                 color: backColor,
                 borderRadius: BorderRadius.circular(20),
@@ -53,15 +53,28 @@ class QuestionEntity {
                 padding: EdgeInsets.fromLTRB(18.w, 12.h, 18.w, 12.h),
                 child: Row(
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: context.styles.mMedium),
-                        // SizedBox(height: 4.h),
-                        Text(subtitle, style: context.styles.sDemilight),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            title,
+                            style: context.styles.mMedium,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          SizedBox(height: 4.h),
+                          Text(
+                            subtitle,
+                            style: context.styles.sDemilight,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    SizedBox(width: 12.w),
                     Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
@@ -73,7 +86,6 @@ class QuestionEntity {
                         color: arrowColor,
                       ),
                     ),
-                    // Text()
                   ],
                 ),
               ),

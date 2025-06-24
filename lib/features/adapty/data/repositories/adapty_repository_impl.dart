@@ -905,16 +905,34 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
         debugPrint(
           '[AdaptyRepositoryImpl] 📅 Определен как трехмесячная подписка',
         );
+
+        // [AdaptyRepositoryImpl] Для трехмесячной подписки ВСЕГДА используем оригинальную цену
+        // даже если есть introductory offer (бесплатные первые 3 дня)
+        final displayPrice =
+            hasDiscount && originalPrice != null ? originalPrice : finalPrice;
+        final displayPriceAmountMicros =
+            hasDiscount && originalPrice != null
+                ? (product.price.amount * 1000000)
+                    .toInt() // Используем оригинальную цену в micros
+                : finalPriceAmountMicros;
+
+        debugPrint(
+          '[AdaptyRepositoryImpl] 💰 Трехмесячная подписка - отображаем цену: $displayPrice (вместо скидочной: $finalPrice)',
+        );
+        debugPrint(
+          '[AdaptyRepositoryImpl] 💰 Трехмесячная подписка - hasDiscount: $hasDiscount, originalPrice: $originalPrice, basePrice: $basePrice',
+        );
+
         return SubscriptionProduct(
           productId: productId,
           title: '3个月',
           description: hasDiscount ? '首月特惠' : '¥19.3每月',
-          price: finalPrice,
-          priceAmountMicros: finalPriceAmountMicros,
+          price: displayPrice,
+          priceAmountMicros: displayPriceAmountMicros,
           currencyCode: currencyCode,
           subscriptionPeriod: 'quarterly',
           hasFreeTrial: false,
-          pricePerPeriod: finalPrice,
+          pricePerPeriod: displayPrice,
           originalPrice: hasDiscount ? originalPrice : null,
           isRecommended: hasDiscount,
         );
@@ -1208,6 +1226,7 @@ class AdaptyRepositoryImpl implements AdaptyRepository {
 
   /// Детальное логирование состояния пользователя для отладки
   /// [AdaptyRepositoryImpl] Выводит все данные о состоянии пользователя в лог
+  @override
   @visibleForTesting
   Future<void> logUserState() async {
     debugPrint('');

@@ -91,13 +91,10 @@ class _AppState extends State<App> {
                 // const _LoadingScreen(),
                 // const Paywall(),
                 _isInitializing
-                    ? const _LoadingScreen() // Экран загрузки пока проверяем статус
-                    // : !kDebugMode
+                    ? const _LoadingScreen()
                     : _onboardingCompleted
-                    ? const HomeScreen() // Если онбординг пройден, показываем главную страницу
-                    : const OnboardScreen(), // Иначе показываем экран онбординга
-            // routerConfig: _routerConfig,
-            // scaffoldMessengerKey: scaffoldKey,
+                    ? const HomeScreen()
+                    : const OnboardScreen(),
           ),
         );
       },

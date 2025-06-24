@@ -13,6 +13,8 @@ class InputSendWidget extends StatefulWidget {
     required this.isSendAvailable,
     required this.currentInput,
     this.focusNode,
+    this.isGenerating = false,
+    this.onStopGeneration,
     super.key,
   });
 
@@ -21,6 +23,8 @@ class InputSendWidget extends StatefulWidget {
   final bool isSendAvailable;
   final String currentInput;
   final FocusNode? focusNode;
+  final bool isGenerating;
+  final VoidCallback? onStopGeneration;
 
   @override
   State<InputSendWidget> createState() => _InputSendWidgetState();
@@ -81,8 +85,12 @@ class _InputSendWidgetState extends State<InputSendWidget> {
               Padding(
                 padding: EdgeInsets.fromLTRB(0, 12.h, 8.w, 8.h),
                 child: _SendButton(
-                  isActive: widget.isSendAvailable,
-                  onTap: widget.isSendAvailable ? widget.onSend : null,
+                  isActive: widget.isGenerating ? true : widget.isSendAvailable,
+                  onTap:
+                      widget.isGenerating
+                          ? widget.onStopGeneration
+                          : (widget.isSendAvailable ? widget.onSend : null),
+                  isGenerating: widget.isGenerating,
                 ),
               ),
             ],
@@ -119,7 +127,12 @@ class TextInputWidget extends StatelessWidget {
 class _SendButton extends StatelessWidget {
   final bool isActive;
   final VoidCallback? onTap;
-  const _SendButton({required this.isActive, this.onTap});
+  final bool isGenerating;
+  const _SendButton({
+    required this.isActive,
+    required this.isGenerating,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -133,11 +146,18 @@ class _SendButton extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         duration: Durations.medium1,
-        child: SvgPicture.asset(
-          'assets/send.svg',
-          fit: BoxFit.scaleDown,
-          color: isActive ? ZColors.blueDark : ZColors.white,
-        ),
+        child:
+            isGenerating
+                ? Icon(
+                  Icons.stop,
+                  color: isActive ? ZColors.blueDark : ZColors.white,
+                  size: 20.w,
+                )
+                : SvgPicture.asset(
+                  'assets/send.svg',
+                  fit: BoxFit.scaleDown,
+                  color: isActive ? ZColors.blueDark : ZColors.white,
+                ),
       ),
     );
   }

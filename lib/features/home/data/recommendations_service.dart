@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -368,17 +367,6 @@ class RecommendationsService {
     }
   }
 
-  /// Получает язык устройства пользователя
-  String _getDeviceLanguage() {
-    try {
-      // Получаем только языковой код без страны
-      final locale = PlatformDispatcher.instance.locale;
-      return locale.languageCode;
-    } catch (e) {
-      return 'en'; // По умолчанию английский
-    }
-  }
-
   /// Получает интересы пользователя из профиля
   /// Возвращает список интересов или пустой список если профиль не найден
   Future<List<Interest>> getUserInterests() async {
@@ -658,9 +646,6 @@ class RecommendationsService {
   /// Генерирует рекомендации карточек через DeepSeek агент
   Future<RecommendationResult> regenerateRecommendations() async {
     try {
-      // Получаем язык устройства
-      final deviceLanguage = _getDeviceLanguage();
-
       // Получаем все вопросы из истории чатов (без логов)
       final historyQuestions = await _getChatHistoryQuestionsQuiet();
 
@@ -669,7 +654,6 @@ class RecommendationsService {
 
       // Формируем JSON для отправки в DeepSeek
       final jsonInput = {
-        'language': deviceLanguage,
         'interests': interests.map((interest) => interest.name).toList(),
         'recent_questions': historyQuestions,
       };
@@ -710,7 +694,7 @@ class RecommendationsService {
         recommendations: recommendationCards,
         generatedAt: DateTime.now(),
         userInterests: interests.map((i) => i.name).toList(),
-        deviceLanguage: deviceLanguage,
+        deviceLanguage: 'zh',
       );
 
       await _saveMainRecommendations(savedRecommendations);
@@ -720,7 +704,7 @@ class RecommendationsService {
         message: 'Рекомендации сгенерированы успешно',
         interestsCount: interests.length,
         interests: interests,
-        deviceLocale: deviceLanguage,
+        deviceLocale: 'zh',
         historyQuestions: historyQuestions,
         recommendationCards: recommendationCards,
         questionEntities: questionEntities,
@@ -733,7 +717,7 @@ class RecommendationsService {
         success: false,
         message: 'Ошибка при регенерации: $e',
         interestsCount: 0,
-        deviceLocale: 'error',
+        deviceLocale: 'zh',
       );
     }
   }
@@ -755,13 +739,9 @@ class RecommendationsService {
         '[RecommendationsService] Интересы: ${userInterests.map((i) => i.name).join(", ")}',
       );
 
-      // Получаем язык устройства
-      final deviceLanguage = _getDeviceLanguage();
-
       // Для первичных рекомендаций НЕ используем историю вопросов
       // (поскольку пользователь новый)
       final jsonInput = {
-        'language': deviceLanguage,
         'interests': userInterests.map((interest) => interest.name).toList(),
         'recent_questions': <String>[], // Пустой массив для новых пользователей
         'is_onboarding': true, // Специальный флаг для онбординга
@@ -805,7 +785,7 @@ class RecommendationsService {
         recommendations: recommendationCards,
         generatedAt: DateTime.now(),
         userInterests: userInterests.map((i) => i.name).toList(),
-        deviceLanguage: deviceLanguage,
+        deviceLanguage: 'zh',
       );
 
       await _saveMainRecommendations(savedRecommendations);
@@ -815,7 +795,7 @@ class RecommendationsService {
         message: 'Первичные рекомендации для онбординга сгенерированы успешно',
         interestsCount: userInterests.length,
         interests: userInterests,
-        deviceLocale: deviceLanguage,
+        deviceLocale: 'zh',
         historyQuestions: <String>[], // Пустой для нового пользователя
         recommendationCards: recommendationCards,
         questionEntities: questionEntities,
@@ -829,7 +809,7 @@ class RecommendationsService {
         message: 'Ошибка при генерации первичных рекомендаций: $e',
         interestsCount: userInterests.length,
         interests: userInterests,
-        deviceLocale: 'error',
+        deviceLocale: 'zh',
       );
     }
   }
@@ -849,11 +829,9 @@ class RecommendationsService {
       // Получаем интересы пользователя и историю вопросов
       final interests = await getUserInterests();
       final historyQuestions = await getChatHistoryQuestions();
-      final deviceLanguage = _getDeviceLanguage();
 
       // Создаем JSON для отправки в DeepSeek
       final jsonInput = {
-        'language': deviceLanguage,
         'interests': interests.map((interest) => interest.name).toList(),
         'recent_questions': historyQuestions,
         'is_onboarding': false, // Не онбординг
@@ -887,7 +865,7 @@ class RecommendationsService {
         recommendations: newRecommendationCards,
         generatedAt: DateTime.now(),
         userInterests: interests.map((i) => i.name).toList(),
-        deviceLanguage: deviceLanguage,
+        deviceLanguage: 'zh',
       );
 
       // Сохраняем в новое хранилище
@@ -909,20 +887,20 @@ class RecommendationsService {
         message: 'Новые рекомендации после гадания сгенерированы успешно',
         interestsCount: interests.length,
         interests: interests,
-        deviceLocale: deviceLanguage,
+        deviceLocale: 'zh',
         historyQuestions: historyQuestions,
         recommendationCards: newRecommendationCards,
         questionEntities: newQuestionEntities,
       );
     } catch (e) {
       debugPrint(
-        '[RecommendationsService] Ошибка при генерации новых рекомендаций после гадания: $e',
+        '[RecommendationsService] Ошибка при генерации новых рекомендаций: $e',
       );
       return RecommendationResult(
         success: false,
         message: 'Ошибка при генерации новых рекомендаций: $e',
         interestsCount: 0,
-        deviceLocale: 'error',
+        deviceLocale: 'zh',
       );
     }
   }

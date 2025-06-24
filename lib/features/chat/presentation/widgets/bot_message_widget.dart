@@ -49,12 +49,23 @@ class BotMessageWidget extends StatelessWidget {
           ),
           SizedBox(width: isLoading ? 16.w : 0),
           if (isLoading)
-            SizedBox.square(
-              dimension: 20.w,
-              child: const CircularProgressIndicator(
-                color: ZColors.blueDark,
-                strokeWidth: 2,
-              ),
+            Row(
+              children: [
+                Text(
+                  '生成中',
+                  style: context.styles.mDemilight.copyWith(
+                    color: ZColors.blueDark,
+                  ),
+                ),
+                SizedBox(width: 8.w),
+                SizedBox.square(
+                  dimension: 20.w,
+                  child: const CircularProgressIndicator(
+                    color: ZColors.blueDark,
+                    strokeWidth: 2,
+                  ),
+                ),
+              ],
             )
           else
             Expanded(

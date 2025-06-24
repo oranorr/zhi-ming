@@ -88,10 +88,11 @@ mixin ChatScreenMixin<T extends StatefulWidget> on State<T> {
     final historyEntrypoint = entrypoint as HistoryEntrypointEntity;
     final messages = historyEntrypoint.chatHistory.messages;
 
-    // Очищаем текущие сообщения перед загрузкой истории
+    // [ChatScreenMixin] Очищаем текущие сообщения перед загрузкой истории
+    // Это гарантирует, что мы начинаем с чистого состояния
     cubit.clearMessages();
 
-    // Загружаем сообщения из истории в правильном порядке
+    // [ChatScreenMixin] Загружаем сообщения из истории в правильном порядке
     // Сообщения в истории хранятся в правильном хронологическом порядке
     messages.forEach(addHistoryMessage);
 
@@ -193,6 +194,17 @@ mixin ChatScreenMixin<T extends StatefulWidget> on State<T> {
     });
   }
 
+  /// [ChatScreenMixin] Метод для обработки остановки генерации контента
+  void handleStopGeneration() {
+    print('[ChatScreenMixin] Остановка генерации контента');
+
+    // Останавливаем генерацию через cubit
+    cubit.stopGeneration();
+
+    // Показываем клавиатуру обратно для возможности ввода нового сообщения
+    focusNode.requestFocus();
+  }
+
   /// [ChatScreenMixin] Обработка нажатия кнопки назад
   Future<void> handleBackPressed() async {
     // Скрываем клавиатуру
@@ -201,9 +213,11 @@ mixin ChatScreenMixin<T extends StatefulWidget> on State<T> {
     // Даем немного времени для закрытия клавиатуры
     await Future.delayed(const Duration(milliseconds: 100));
 
-    // В режиме истории не очищаем состояние cubit
-    if (!entrypoint.isReadOnlyMode) {
-      // Полностью очищаем состояние кубита только в обычном режиме
+    // [ChatScreenMixin] Очищаем состояние cubit для всех типов entrypoint
+    // кроме OnboardingEntrypointEntity, который имеет специальную логику
+    if (entrypoint is! OnboardingEntrypointEntity) {
+      // Полностью очищаем состояние кубита для всех типов entrypoint
+      // включая исторические чаты, чтобы избежать проблем с HydratedCubit
       await cubit.clear();
     }
 
@@ -228,18 +242,16 @@ mixin ChatScreenMixin<T extends StatefulWidget> on State<T> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('Очистить чат Ба-Дзы?'),
-            content: const Text(
-              'Это действие удалит всю историю чата и вернет к начальному сообщению.',
-            ),
+            title: const Text('清除八字聊天？'),
+            content: const Text('此操作将删除所有聊天历史并返回到初始消息。'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Отмена'),
+                child: const Text('取消'),
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Очистить'),
+                child: const Text('清除'),
               ),
             ],
           ),

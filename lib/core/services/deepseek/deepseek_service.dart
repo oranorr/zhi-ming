@@ -30,6 +30,10 @@ class DeepSeekService {
 
   final _dio = Dio();
 
+  /// Активные HTTP запросы для возможности отмены
+  http.Request? _activeRequest;
+  http.StreamedResponse? _activeResponse;
+
   /// Отправляет запрос указанному агенту и возвращает ответ
   Future<String> sendMessage({
     required AgentType agentType,
@@ -97,7 +101,7 @@ class DeepSeekService {
 
         if (responseData == null) {
           debugPrint('ОШИБКА: response.data == null');
-          return 'Сервер вернул пустой ответ. Пожалуйста, попробуйте позже.';
+          return '服务器返回空响应。请稍后重试。';
         }
 
         debugPrint(
@@ -108,7 +112,7 @@ class DeepSeekService {
         if (choices == null) {
           debugPrint('ОШИБКА: choices == null');
           debugPrint('Полный ответ: $responseData');
-          return 'Сервер вернул ответ без поля choices. Пожалуйста, попробуйте позже.';
+          return '服务器返回没有choices字段的响应。请稍后重试。';
         }
 
         if (choices is! List || choices.isEmpty) {
@@ -116,7 +120,7 @@ class DeepSeekService {
           debugPrint(
             'Тип choices: ${choices.runtimeType}, содержимое: $choices',
           );
-          return 'Сервер вернул пустой список вариантов. Пожалуйста, попробуйте позже.';
+          return '服务器返回空选项列表。请稍后重试。';
         }
 
         final firstChoice = choices[0];
@@ -153,7 +157,7 @@ class DeepSeekService {
         debugPrint('ОШИБКА при отправке сообщения: ${response.statusCode}');
         debugPrint('Тело ответа с ошибкой: ${response.data}');
         debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ОШИБКОЙ) ======');
-        return 'Ошибка при обработке запроса: ${response.statusCode}';
+        return '服务器返回无效响应。请稍后重试。';
       }
     } on DioException catch (e, stackTrace) {
       debugPrint('ИСКЛЮЧЕНИЕ при отправке сообщения в API: $e');
@@ -161,11 +165,11 @@ class DeepSeekService {
         'Stack trace: ${stackTrace.toString().split("\n").take(10).join("\n")}',
       );
       debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ИСКЛЮЧЕНИЕМ) ======');
-      return 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже. Детали: $e';
+      return '处理请求时发生错误。请稍后重试。详情: $e';
     } on Exception catch (e) {
       debugPrint('Исключение при отправке сообщения в API: $e');
       debugPrint('====== КОНЕЦ ОТПРАВКИ СООБЩЕНИЯ (С ИСКЛЮЧЕНИЕМ) ======');
-      return 'Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже. Детали: $e';
+      return '您的问题不适合占卜。请更具体地表述。';
     }
   }
 
@@ -215,10 +219,24 @@ class DeepSeekService {
             ..headers.addAll(headers)
             ..body = requestBody;
 
+      // Сохраняем ссылку на активный запрос
+      _activeRequest = request;
+
       final response = await http.Client().send(request);
+
+      // Сохраняем ссылку на активный ответ
+      _activeResponse = response;
 
       if (response.statusCode == 200) {
         await for (final chunk in response.stream.transform(utf8.decoder)) {
+          // Проверяем, не была ли отмена запроса
+          if (_activeRequest == null || _activeResponse == null) {
+            debugPrint(
+              '[DeepSeekService] Запрос был отменен, прерываем стриминг',
+            );
+            break;
+          }
+
           // API возвращает данные в формате SSE (Server-Sent Events)
           // Каждое событие начинается с 'data: '
           final lines = chunk.split('\n');
@@ -236,9 +254,13 @@ class DeepSeekService {
         debugPrint('Тело ответа: $responseBody');
         yield 'Ошибка стриминга: ${response.statusCode}. Детали: $responseBody';
       }
+
+      // Очищаем ссылки после завершения
+      _activeRequest = null;
+      _activeResponse = null;
     } on Exception catch (e) {
       debugPrint('Исключение при стриминге: $e');
-      yield 'Произошла ошибка при обработке запроса: $e';
+      yield '处理请求时发生错误。请稍后重试。详情: $e';
     }
   }
 
@@ -346,8 +368,7 @@ class DeepSeekService {
         if (cleanedResponse.toLowerCase().contains('invalid')) {
           return RequestValidationResponse(
             status: 'invalid',
-            reasonMessage:
-                'Ваш вопрос не подходит для гадания. Пожалуйста, сформулируйте его более конкретно.',
+            reasonMessage: '您的问题不适合占卜。请更具体地表述。',
           );
         } else if (cleanedResponse.toLowerCase().contains('valid')) {
           return RequestValidationResponse(status: 'valid', reasonMessage: '');
@@ -564,8 +585,8 @@ class DeepSeekService {
         return _extractMarkdownFromResponse(response);
       }
     } on Exception catch (e) {
-      debugPrint('Ошибка при структурированной интерпретации гексаграмм: $e');
-      return 'Произошла ошибка при интерпретации гексаграмм. Пожалуйста, попробуйте позже.';
+      debugPrint('解释卦象时发生错误。请稍后重试。');
+      return '服务器返回空响应。请稍后重试。';
     }
   }
 
@@ -727,7 +748,7 @@ class DeepSeekService {
       debugPrint(
         '====== КОНЕЦ ОБРАБОТКИ ПОСЛЕДУЮЩЕГО ВОПРОСА (С ОШИБКОЙ) ======',
       );
-      return 'Произошла ошибка при обработке вашего вопроса. Пожалуйста, попробуйте сформулировать его иначе. Детали: $e';
+      return '处理请求时发生错误。请稍后重试。详情: $e';
     }
   }
 
@@ -790,6 +811,21 @@ class DeepSeekService {
     } on Exception catch (e) {
       debugPrint('Ошибка при тестировании соединения: $e');
       return 'Ошибка соединения: $e';
+    }
+  }
+
+  /// Отмена активных HTTP запросов
+  void cancelActiveRequests() {
+    debugPrint('[DeepSeekService] Отмена активных HTTP запросов');
+
+    if (_activeRequest != null) {
+      debugPrint('[DeepSeekService] Очищаем активный запрос');
+      _activeRequest = null;
+    }
+
+    if (_activeResponse != null) {
+      debugPrint('[DeepSeekService] Очищаем активный ответ');
+      _activeResponse = null;
     }
   }
 }

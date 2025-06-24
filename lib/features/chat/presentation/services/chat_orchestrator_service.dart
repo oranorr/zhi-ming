@@ -41,6 +41,18 @@ class ChatOrchestratorService {
     return _subscriptionService.getSubscriptionStatus();
   }
 
+  /// Остановка всех активных streaming процессов
+  void stopAllStreaming() {
+    debugPrint('[ChatOrchestratorService] Остановка всех streaming процессов');
+    _streamingService.stopAllStreaming();
+  }
+
+  /// Освобождение ресурсов сервиса
+  void dispose() {
+    debugPrint('[ChatOrchestratorService] Освобождение ресурсов');
+    _streamingService.dispose();
+  }
+
   /// Генерация гексаграммы из значений линий
   Future<HexagramPair> generateHexagramFromLines(List<int> lineValues) async {
     return _hexagramService.generateHexagramFromLines(lineValues);
@@ -79,8 +91,8 @@ class ChatOrchestratorService {
     if (!canAskFollowUp) {
       return FollowUpQuestionResult.paywalRequired(
         message:
-            'Вы исчерпали все бесплатные дополнительные вопросы. '
-            'Для продолжения необходимо оформить подписку.',
+            '您已用完所有免费附加问题。 '
+            '要继续使用，请订阅。',
       );
     }
 
@@ -179,10 +191,7 @@ class ChatOrchestratorService {
       debugPrint(
         '[ChatOrchestratorService] Ошибка при обработке встряхивания: $e',
       );
-      return ShakeProcessingResult.error(
-        message:
-            'Произошла ошибка при обработке гадания. Пожалуйста, попробуйте еще раз.',
-      );
+      return ShakeProcessingResult.error(message: '处理占卜时发生错误。请重试。');
     }
   }
 
@@ -222,10 +231,7 @@ class ChatOrchestratorService {
       debugPrint(
         '[ChatOrchestratorService] Ошибка при обработке встряхивания: $e',
       );
-      return ShakeProcessingResult.error(
-        message:
-            'Произошла ошибка при обработке гадания. Пожалуйста, попробуйте еще раз.',
-      );
+      return ShakeProcessingResult.error(message: '处理占卜时发生错误。请重试。');
     }
   }
 
@@ -250,8 +256,8 @@ class ChatOrchestratorService {
       if (!subscriptionStatus.canAskFollowUpQuestion) {
         return FollowUpQuestionResult.paywalRequired(
           message:
-              'Вы исчерпали все бесплатные дополнительные вопросы. '
-              'Для продолжения необходимо оформить подписку.',
+              '您已用完所有免费附加问题。 '
+              '要继续使用，请订阅。',
         );
       }
 
@@ -278,11 +284,7 @@ class ChatOrchestratorService {
       debugPrint(
         '[ChatOrchestratorService] Ошибка при обработке последующего вопроса: $e',
       );
-      return FollowUpQuestionResult.error(
-        message:
-            'Произошла ошибка при обработке вашего вопроса. '
-            'Пожалуйста, попробуйте сформулировать его иначе.',
-      );
+      return FollowUpQuestionResult.error(message: '处理占卜时发生错误。请重试。');
     }
   }
 
@@ -295,11 +297,6 @@ class ChatOrchestratorService {
       message: message,
       onStreamingComplete: onStreamingComplete,
     );
-  }
-
-  /// Остановка всех streaming
-  void stopAllStreaming() {
-    _streamingService.stopAllStreaming();
   }
 
   /// Проверка необходимости перехода на paywall для нового гадания
@@ -333,12 +330,6 @@ class ChatOrchestratorService {
       hasActiveSubscription: hasActiveSubscription,
       remainingFreeRequests: remainingFreeRequests,
     );
-  }
-
-  /// Освобождение ресурсов
-  void dispose() {
-    debugPrint('[ChatOrchestratorService] Освобождение ресурсов');
-    _streamingService.dispose();
   }
 
   // Методы для тестирования и отладки

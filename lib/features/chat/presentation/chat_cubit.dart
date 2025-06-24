@@ -14,6 +14,7 @@ import 'package:zhi_ming/features/chat/presentation/services/chat_validation_ser
 import 'package:zhi_ming/features/chat/presentation/services/hexagram_generation_service.dart';
 import 'package:zhi_ming/features/history/data/chat_history_service.dart';
 import 'package:zhi_ming/features/home/data/recommendations_service.dart';
+import 'package:http/http.dart' as http;
 
 /// Оптимизированный ChatCubit с делегированием бизнес-логики в сервисы
 /// Фокусируется только на управлении состоянием и координации операций
@@ -37,6 +38,10 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
   /// Текущий entrypoint для чата (сохраняется после инициализации)
   ChatEntrypointEntity? _currentEntrypoint;
+
+  /// Активный HTTP запрос для возможности отмены
+  http.Request? _activeRequest;
+  http.StreamedResponse? _activeResponse;
 
   // Поля для новой логики paywall после встряхивания
   HexagramPair? _pendingHexagramPair;
@@ -126,6 +131,71 @@ class ChatCubit extends HydratedCubit<ChatState> {
     emit(state.copyWith(isLoading: loading));
   }
 
+  /// Остановка текущей генерации контента
+  void stopGeneration() {
+    debugPrint('[ChatCubit] Остановка генерации контента');
+
+    // Отменяем активный HTTP запрос
+    _cancelActiveRequest();
+
+    // Останавливаем все streaming
+    _orchestratorService.stopAllStreaming();
+
+    // Убираем состояние загрузки
+    setLoading(false);
+
+    // Удаляем пустое сообщение бота если оно есть
+    _removeEmptyBotMessage();
+
+    // Очищаем текущий ввод если он пустой
+    if (state.currentInput.trim().isEmpty) {
+      updateInput('');
+    }
+
+    debugPrint('[ChatCubit] Генерация остановлена');
+  }
+
+  /// Отмена активного HTTP запроса
+  void _cancelActiveRequest() {
+    if (_activeRequest != null) {
+      debugPrint('[ChatCubit] Отменяем активный HTTP запрос');
+      // В Dart http пакете нет прямого метода отмены, но можно очистить ссылки
+      _activeRequest = null;
+    }
+
+    if (_activeResponse != null) {
+      debugPrint('[ChatCubit] Отменяем активный HTTP ответ');
+      // Очищаем ссылку на ответ
+      _activeResponse = null;
+    }
+
+    // Отменяем запросы в DeepSeekService
+    _deepSeekService.cancelActiveRequests();
+  }
+
+  /// Удаление пустого сообщения бота
+  void _removeEmptyBotMessage() {
+    final updatedMessages = List<MessageEntity>.from(state.messages);
+
+    // Ищем пустое сообщение бота (не пользователя) с пустым текстом
+    final emptyBotMessageIndex = updatedMessages.indexWhere(
+      (message) => !message.isMe && message.text.trim().isEmpty,
+    );
+
+    if (emptyBotMessageIndex != -1) {
+      debugPrint('[ChatCubit] Удаляем пустое сообщение бота');
+      updatedMessages.removeAt(emptyBotMessageIndex);
+
+      emit(
+        state.copyWith(
+          messages: updatedMessages,
+          isLoading: false,
+          loadingMessageIndex: -1,
+        ),
+      );
+    }
+  }
+
   // ===============================================
   // ОСНОВНАЯ БИЗНЕС-ЛОГИКА
   // ===============================================
@@ -168,6 +238,13 @@ class ChatCubit extends HydratedCubit<ChatState> {
     if (_currentEntrypoint is BaDzyEntrypointEntity) {
       // [ChatCubit] Специальная обработка для Ба-Дзы
       _handleBaDzyMessage(state.messages[0].text, state.messages);
+    } else if (_currentEntrypoint is CardEntrypointEntity) {
+      // [ChatCubit] Специальная обработка для карточек с предзаготовленными вопросами
+      // Пропускаем валидатор для ВСЕХ вопросов из карточек (включая фоллоу-апы)
+      debugPrint(
+        '[ChatCubit] Обрабатываем как вопрос из карточки (пропускаем валидатор)',
+      );
+      _handleCardQuestion(state.messages[0].text);
     } else if (state.hasHexagramContext) {
       // Есть контекст последнего гадания - обрабатываем как последующий вопрос
       debugPrint(
@@ -214,55 +291,119 @@ class ChatCubit extends HydratedCubit<ChatState> {
     _handleValidationResult(validationResult);
   }
 
+  /// Обработка вопросов из карточек (пропускает валидатор)
+  /// Вызывается для ВСЕХ вопросов из CardEntrypointEntity (первый вопрос и фоллоу-апы)
+  Future<void> _handleCardQuestion(String question) async {
+    debugPrint('[ChatCubit] Обработка вопроса из карточки: $question');
+
+    // [ChatCubit] Проверяем, есть ли контекст последнего гадания
+    if (state.hasHexagramContext) {
+      // Есть контекст - обрабатываем как фоллоу-ап вопрос
+      debugPrint('[ChatCubit] Обрабатываем как фоллоу-ап вопрос из карточки');
+      await _handleFollowUpQuestion(question);
+      return;
+    }
+
+    // Нет контекста - это первый вопрос из карточки
+    debugPrint('[ChatCubit] Обрабатываем как первый вопрос из карточки');
+
+    // [ChatCubit] Добавляем вопрос к контексту
+    final updatedQuestionContext = List<String>.from(
+      state.currentQuestionContext,
+    )..add(question);
+
+    // Обновляем состояние с новым контекстом
+    emit(state.copyWith(currentQuestionContext: updatedQuestionContext));
+
+    // [ChatCubit] Показываем приглашение к гаданию БЕЗ валидации
+    const invitationMessage = '现在您可以抛硬币来获得答案。';
+
+    final invitationBotMessage = MessageEntity(
+      text: invitationMessage,
+      isMe: false,
+      timestamp: DateTime.now(),
+    );
+
+    final updatedMessages = List<MessageEntity>.from(state.messages)
+      ..insert(0, invitationBotMessage);
+
+    // [ChatCubit] Сразу делаем кнопку гадания доступной
+    emit(
+      state.copyWith(
+        messages: updatedMessages,
+        isButtonAvailable: true, // ВАЖНО: кнопка гадания сразу доступна
+        currentQuestionContext: updatedQuestionContext,
+      ),
+    );
+
+    debugPrint(
+      '[ChatCubit] Кнопка гадания активирована для вопроса из карточки',
+    );
+  }
+
   /// Обработка последующего вопроса
   Future<void> _handleFollowUpQuestion(String question) async {
     debugPrint('[ChatCubit] Обработка последующего вопроса');
 
     if (state.lastHexagramContext == null) {
       debugPrint('[ChatCubit] ОШИБКА: Нет контекста последнего гадания');
-      addBotMessage(
-        'Для задания дополнительных вопросов необходимо сначала провести гадание.',
-      );
+      addBotMessage('未找到用户问题。请重新提问。');
       return;
     }
 
     // Создаем индикатор загрузки
     _showLoadingMessage();
 
-    // Обрабатываем через оркестратор
-    final result = await _orchestratorService.handleFollowUpQuestion(
-      question: question,
-      context: state.lastHexagramContext!,
-      conversationHistory: state.messages,
-    );
+    try {
+      // Обрабатываем через оркестратор
+      final result = await _orchestratorService.handleFollowUpQuestion(
+        question: question,
+        context: state.lastHexagramContext!,
+        conversationHistory: state.messages,
+      );
 
-    // Обрабатываем результат
-    if (result.isSuccess) {
-      _showResponseMessage(result.response, enableStreaming: true);
-
-      // Обновляем статус подписки
-      if (result.updatedSubscriptionStatus != null) {
-        emit(
-          state.copyWith(
-            hasActiveSubscription:
-                result.updatedSubscriptionStatus!.hasPremiumAccess,
-            remainingFreeRequests:
-                result.updatedSubscriptionStatus!.remainingFreeRequests,
-            hasUsedFreeReading:
-                result.updatedSubscriptionStatus!.hasUsedFreeReading,
-            remainingFollowUpQuestions:
-                result.updatedSubscriptionStatus!.remainingFollowUpQuestions,
-          ),
-        );
+      // Проверяем, не была ли отмена во время обработки
+      if (!state.isLoading) {
+        debugPrint('[ChatCubit] Обработка была отменена пользователем');
+        return;
       }
 
-      // Сохраняем обновленный чат в историю
-      await _saveOrUpdateChatHistory();
-    } else if (result.requiresPaywall) {
-      _showErrorMessage(result.message);
-      _navigateToPaywall();
-    } else {
-      _showErrorMessage(result.message);
+      // Обрабатываем результат
+      if (result.isSuccess) {
+        _showResponseMessage(result.response, enableStreaming: true);
+
+        // Обновляем статус подписки
+        if (result.updatedSubscriptionStatus != null) {
+          emit(
+            state.copyWith(
+              hasActiveSubscription:
+                  result.updatedSubscriptionStatus!.hasPremiumAccess,
+              remainingFreeRequests:
+                  result.updatedSubscriptionStatus!.remainingFreeRequests,
+              hasUsedFreeReading:
+                  result.updatedSubscriptionStatus!.hasUsedFreeReading,
+              remainingFollowUpQuestions:
+                  result.updatedSubscriptionStatus!.remainingFollowUpQuestions,
+            ),
+          );
+        }
+
+        // Сохраняем обновленный чат в историю
+        await _saveOrUpdateChatHistory();
+      } else if (result.requiresPaywall) {
+        _showErrorMessage(result.message);
+        _navigateToPaywall();
+      } else {
+        _showErrorMessage(result.message);
+      }
+    } catch (e) {
+      debugPrint('[ChatCubit] Ошибка при обработке follow-up вопроса: $e');
+      // Проверяем, не была ли отмена
+      if (!state.isLoading) {
+        debugPrint('[ChatCubit] Обработка была отменена пользователем');
+        return;
+      }
+      addBotMessage('处理您的问题时发生错误。请重试。');
     }
   }
 
@@ -283,9 +424,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
     final userQuestion = _getUserQuestion();
     if (userQuestion.isEmpty) {
       debugPrint('[ChatCubit] ОШИБКА: Нет вопроса пользователя');
-      addBotMessage(
-        'Не найден вопрос пользователя. Пожалуйста, задайте вопрос заново.',
-      );
+      addBotMessage('未找到用户问题。请重新提问。');
       return;
     }
 
@@ -356,9 +495,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
           await _showHexagramResult(result);
         } catch (e) {
           debugPrint('[ChatCubit] Ошибка при получении интерпретации: $e');
-          _showErrorMessage(
-            'Произошла ошибка при получении интерпретации. Пожалуйста, попробуйте еще раз.',
-          );
+          addBotMessage('处理您的问题时发生错误。请重试。');
         }
 
         return;
@@ -376,9 +513,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       _navigateToPaywallAfterShaking(isFirstReading: isFirstReading);
     } catch (e) {
       debugPrint('[ChatCubit] Ошибка при генерации гексаграмм: $e');
-      addBotMessage(
-        'Произошла ошибка при обработке гадания. Пожалуйста, попробуйте еще раз.',
-      );
+      addBotMessage('处理您的问题时发生错误。请重试。');
     }
   }
 
@@ -685,6 +820,9 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
   /// Обработка результата валидации
   void _handleValidationResult(ValidationResult result) {
+    // [ChatCubit] Примечание: для CardEntrypointEntity кнопка гадания уже активирована в _handleCardQuestion
+    // Этот метод вызывается только для обычных вопросов (не из карточек)
+
     if (result.isValid) {
       // Валидация успешна - показываем приглашение к встряхиванию
       _showResponseMessage(result.message);
@@ -812,9 +950,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       }
     } catch (e) {
       debugPrint('[ChatCubit] ОШИБКА при обработке сообщения Ба-Дзы: $e');
-      addBotMessage(
-        'Произошла ошибка при обработке сообщения. Пожалуйста, попробуйте еще раз.',
-      );
+      addBotMessage('处理您的问题时发生错误。请重试。');
     }
   }
 
@@ -857,9 +993,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       );
       debugPrint('[ChatCubit] StackTrace: $stackTrace');
 
-      addBotMessage(
-        'Произошла ошибка при обработке вашего вопроса. Пожалуйста, попробуйте еще раз.',
-      );
+      addBotMessage('处理您的问题时发生错误。请重试。');
     }
   }
 
@@ -962,7 +1096,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
         debugPrint('[ChatCubit] Создаем новый чат Ба-Дзы');
 
         final initialBotMessage = MessageEntity(
-          text: 'пожалуйста напиши место своего рождения',
+          text: '请写下您的出生地点',
           isMe: false,
           timestamp: DateTime.now(),
         );
@@ -980,7 +1114,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
       // В случае ошибки показываем стандартное сообщение
       final initialBotMessage = MessageEntity(
-        text: 'пожалуйста напиши место своего рождения',
+        text: '请写下您的出生地点',
         isMe: false,
         timestamp: DateTime.now(),
       );
@@ -1017,8 +1151,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       }
 
       // [ChatCubit] Проверяем, что это содержательный ответ (не приветственное сообщение)
-      if (message.text.contains('место своего рождения') ||
-          message.text.length < 50) {
+      if (message.text.contains('请写下您的出生地点') || message.text.length < 50) {
         debugPrint(
           '[ChatCubit] Сообщение слишком короткое для гороскопа, пропускаем',
         );
@@ -1055,9 +1188,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
       if (userProfile == null) {
         debugPrint('[ChatCubit] ОШИБКА: Профиль пользователя не найден');
-        addBotMessage(
-          'Не удалось получить данные о вашем рождении. Пожалуйста, заполните профиль в настройках.',
-        );
+        addBotMessage('无法获取您的出生数据。请在设置中填写个人资料。');
         return;
       }
 
@@ -1084,9 +1215,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       debugPrint('[ChatCubit] ОШИБКА при обработке Ба-Дзы: $e');
       debugPrint('[ChatCubit] StackTrace: $stackTrace');
 
-      addBotMessage(
-        'Произошла ошибка при анализе ваших данных. Пожалуйста, попробуйте еще раз.',
-      );
+      addBotMessage('处理您的问题时发生错误。请重试。');
     }
   }
 
@@ -1173,7 +1302,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
 
       // Создаем новое начальное сообщение
       final initialBotMessage = MessageEntity(
-        text: 'пожалуйста напиши место своего рождения',
+        text: '请写下您的出生地点',
         isMe: false,
         timestamp: DateTime.now(),
       );
@@ -1359,9 +1488,7 @@ class ChatCubit extends HydratedCubit<ChatState> {
       }
     } catch (e) {
       debugPrint('[ChatCubit] Ошибка при обработке возврата из paywall: $e');
-      _showErrorMessage(
-        'Произошла ошибка при получении интерпретации. Пожалуйста, попробуйте еще раз.',
-      );
+      addBotMessage('处理您的问题时发生错误。请重试。');
     } finally {
       // Очищаем временные данные
       _pendingHexagramPair = null;
@@ -1385,19 +1512,21 @@ class ChatCubit extends HydratedCubit<ChatState> {
   Future<void> clear() async {
     debugPrint('[ChatCubit] Полная очистка состояния');
 
-    // Останавливаем все streaming
+    // [ChatCubit] Останавливаем все streaming процессы
     _orchestratorService.stopAllStreaming();
 
-    // Очищаем текущий чат в истории
+    // [ChatCubit] Очищаем текущий чат в истории
     await _historyService.clearCurrentChat();
 
-    // Сбрасываем состояние
+    // [ChatCubit] Сбрасываем состояние до начального
+    // Это особенно важно для HydratedCubit, чтобы избежать
+    // восстановления старого состояния при следующем открытии чата
     emit(const ChatState());
 
-    // Вызываем очистку в родительском классе
+    // [ChatCubit] Вызываем очистку в родительском классе HydratedCubit
     await super.clear();
 
-    // Обновляем статус подписки
+    // [ChatCubit] Обновляем статус подписки после очистки
     await _updateSubscriptionStatus();
 
     debugPrint('[ChatCubit] Состояние полностью очищено');

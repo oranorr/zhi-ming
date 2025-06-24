@@ -32,6 +32,8 @@ class ChatAppBar extends StatelessWidget {
               SvgPicture.asset('assets/arrow-left.svg'),
               SizedBox(width: 8.w),
               Text(
+                // [ChatAppBar] Показываем "历史" для исторических чатов и "首页" для обычных
+                // Это помогает пользователю понять, куда он вернется
                 entrypoint.isReadOnlyMode ? '历史' : '首页',
                 style: context.styles.h2,
               ),

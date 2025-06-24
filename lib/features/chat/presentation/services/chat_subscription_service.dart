@@ -107,7 +107,7 @@ class ChatSubscriptionService {
         reason:
             hasSubscription
                 ? 'Неизвестная ошибка проверки подписки'
-                : 'Вы исчерпали все бесплатные запросы. Для продолжения необходимо оформить подписку.',
+                : '您已用完所有免费请求。要继续使用，请订阅。',
         hasActiveSubscription: hasSubscription,
         remainingFreeRequests: remainingRequests,
       );

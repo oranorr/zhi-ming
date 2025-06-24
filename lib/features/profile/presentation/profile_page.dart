@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:zhi_ming/core/extensions/build_context_extension.dart';
 import 'package:zhi_ming/core/services/user_service.dart';
 import 'package:zhi_ming/core/widgets/z_button.dart';
@@ -258,8 +259,13 @@ class _ProfilePageState extends State<ProfilePage> {
             onTap: _showTimePicker, // Добавляем обработчик нажатия
           ),
 
+          SizedBox(height: 30.h),
+
+          // Кнопка AI&Privacy
+          _buildAIPrivacyButton(),
+
           // const Spacer(),
-          SizedBox(height: 220.h),
+          SizedBox(height: 190.h),
 
           // Показываем VIP блок только если есть активная подписка
           if (_subscriptionStatus?.isActive ?? false) _buildVIPBlock(),
@@ -764,6 +770,234 @@ class _ProfilePageState extends State<ProfilePage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Ошибка логирования состояния пользователя: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Кнопка AI&Privacy
+  Widget _buildAIPrivacyButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: Zbutton(
+        action: _showAIPrivacyModal,
+        isLoading: false,
+        isActive: true,
+        text: 'AI&Privacy',
+        textColor: Colors.white,
+        color: const Color(0xFF6B73FF), // Красивый синий цвет
+      ),
+    );
+  }
+
+  /// Показать модальное окно с информацией о AI и Privacy
+  Future<void> _showAIPrivacyModal() async {
+    print('[ProfilePage] Показ модального окна AI&Privacy');
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.8,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
+          ),
+          child: Column(
+            children: [
+              // Заголовок модального окна
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(vertical: 20.h, horizontal: 20.w),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: Colors.grey.withValues(alpha: 0.2),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'AI & Privacy',
+                        style: context.styles.h3.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    // Кнопка закрытия
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 32.w,
+                        height: 32.h,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16.r),
+                        ),
+                        child: Icon(
+                          Icons.close,
+                          size: 20.r,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Содержимое модального окна
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.all(20.w),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Китайский текст
+                      _buildLanguageSection(
+                        language: '中文',
+                        title: 'AI 查询数据',
+                        content:
+                            '当您在应用内输入文字进行问卦或追问时，我们会将该文字及随机生成的会话 ID 通过 TLS 加密传输至 DeepSeek、Qwen 语言模型，仅用于即时生成回答。\n\n该数据在模型返回结果后即被丢弃，我们不会存储、共享或用于任何其他目的。',
+                      ),
+
+                      SizedBox(height: 30.h),
+
+                      // Английский текст
+                      _buildLanguageSection(
+                        language: 'English',
+                        title: 'AI Query Data',
+                        content:
+                            'When you type a question or follow-up in the app, the text and a random session ID are transmitted over TLS to the DeepSeek and Qwen language models solely to generate a response.\n\nThe payload is discarded immediately after the reply is returned. We do not store, share, or use this data for any other purpose.',
+                      ),
+
+                      SizedBox(height: 40.h),
+
+                      // Кнопка с ссылкой на политику конфиденциальности
+                      _buildPrivacyPolicyButton(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Секция с текстом на определенном языке
+  Widget _buildLanguageSection({
+    required String language,
+    required String title,
+    required String content,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(16.w),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Язык
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6B73FF).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8.r),
+            ),
+            child: Text(
+              language,
+              style: context.styles.sDemilight.copyWith(
+                color: const Color(0xFF6B73FF),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+
+          SizedBox(height: 12.h),
+
+          // Заголовок
+          Text(
+            title,
+            style: context.styles.mMedium.copyWith(
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+
+          SizedBox(height: 8.h),
+
+          // Содержимое
+          Text(
+            content,
+            style: context.styles.sDemilight.copyWith(
+              color: Colors.black54,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Кнопка с ссылкой на политику конфиденциальности
+  Widget _buildPrivacyPolicyButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: Zbutton(
+        action: _openPrivacyPolicy,
+        isLoading: false,
+        isActive: true,
+        text: 'Privacy Policy',
+        textColor: Colors.white,
+        color: const Color(0xFF34A853), // Зеленый цвет для политики
+      ),
+    );
+  }
+
+  /// Открыть политику конфиденциальности в браузере
+  Future<void> _openPrivacyPolicy() async {
+    print('[ProfilePage] Открытие политики конфиденциальности');
+
+    const url = 'https://zhiming.app/privacy-policy.html';
+
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        print('[ProfilePage] Политика конфиденциальности открыта');
+      } else {
+        print('[ProfilePage] Не удалось открыть политику конфиденциальности');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Не удалось открыть политику конфиденциальности'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print(
+        '[ProfilePage] Ошибка при открытии политики конфиденциальности: $e',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ошибка при открытии политики конфиденциальности: $e',
+            ),
             backgroundColor: Colors.red,
           ),
         );

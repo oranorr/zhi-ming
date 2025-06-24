@@ -47,7 +47,7 @@ class ChatValidationService {
             message:
                 validationResponse.reasonMessage.isNotEmpty
                     ? validationResponse.reasonMessage
-                    : 'Ваш вопрос не подходит для гадания. Пожалуйста, сформулируйте его иначе.',
+                    : '您的问题不适合占卜。请重新表述。',
           );
 
         default:
@@ -59,10 +59,7 @@ class ChatValidationService {
       }
     } catch (e) {
       debugPrint('[ChatValidationService] Ошибка при валидации запроса: $e');
-      return ValidationResult.error(
-        message:
-            'Произошла техническая ошибка. Пожалуйста, попробуйте еще раз.',
-      );
+      return ValidationResult.error(message: '发生技术错误。请重试。');
     }
   }
 
@@ -107,11 +104,7 @@ class ChatValidationService {
       debugPrint(
         '[ChatValidationService] Ошибка при обработке последующего вопроса: $e',
       );
-      return FollowUpResult.error(
-        message:
-            'Произошла ошибка при обработке вашего вопроса. '
-            'Пожалуйста, попробуйте сформулировать его иначе.',
-      );
+      return FollowUpResult.error(errorMessage: '请重试或重新表述您的问题。');
     }
   }
 
@@ -223,11 +216,11 @@ class FollowUpResult {
   }
 
   /// Ошибка обработки
-  factory FollowUpResult.error({required String message}) {
+  factory FollowUpResult.error({required String errorMessage}) {
     return FollowUpResult._(
       isSuccess: false,
       response: '',
-      errorMessage: message,
+      errorMessage: errorMessage,
     );
   }
 

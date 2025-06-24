@@ -109,6 +109,8 @@ class _ChatScreenState extends State<ChatScreen> with ChatScreenMixin {
                         isSendAvailable: state.isSendAvailable,
                         currentInput: state.currentInput,
                         focusNode: focusNode,
+                        isGenerating: state.isLoading,
+                        onStopGeneration: handleStopGeneration,
                       ),
                     SizedBox(height: 35.h),
                   ],

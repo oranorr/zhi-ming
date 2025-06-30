@@ -25,7 +25,7 @@ class DeepSeekService {
     _dio.options.headers['Authorization'] = 'Bearer $_apiKey';
     _dio.options.headers['Content-Type'] = 'application/json';
   }
-  static const String _apiKey = 'sk-a56eb0bafdb840868eeeb56884dfb61a';
+  static const String _apiKey = 'REPLACE_WITH_YOUR_API_KEY';
   static const String _baseUrl = 'https://api.deepseek.com/v1';
 
   final _dio = Dio();

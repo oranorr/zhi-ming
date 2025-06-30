@@ -9,13 +9,16 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Инициализация Adapty SDK с предоставленным API ключом
+  // ВНИМАНИЕ: Для публичной демонстрации ключ заменён на заглушку.
+  // Подставьте свой реальный ключ для работы приложения в продакшн/разработке.
+  // WARNING: For public demo, the key is replaced with a placeholder.
+  // Insert your real Adapty API key for production/development use.
   try {
     await Adapty().activate(
-      configuration: AdaptyConfiguration(
-        apiKey: 'public_live_fskP9YOd.ESywAoCmsmDLtoV0z9tI',
-      )..withLogLevel(
-        AdaptyLogLevel.verbose,
-      ), // Включаем подробные логи для отладки
+      configuration: AdaptyConfiguration(apiKey: 'YOUR_ADAPTY_API_KEY')
+        ..withLogLevel(
+          AdaptyLogLevel.verbose,
+        ), // Включаем подробные логи для отладки
     );
     debugPrint('[main] Adapty SDK успешно активирован');
 
